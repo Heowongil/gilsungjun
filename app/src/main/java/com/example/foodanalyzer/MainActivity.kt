@@ -15,7 +15,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.navigation.compose.*
 import com.example.foodanalyzer.ui.theme.FoodAnalyzerTheme
-
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
+import com.example.foodanalyzer.data.AppDatabase
+import com.example.foodanalyzer.data.DatabaseInitializer
 // 하단 탭 정보를 담는 데이터 클래스
 sealed class BottomNavItem(
     val route: String,
@@ -31,6 +34,13 @@ sealed class BottomNavItem(
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // 앱 시작 시 DB 초기화
+        val database = AppDatabase.getInstance(this)
+        lifecycleScope.launch {
+            DatabaseInitializer.initializeIfNeeded(this@MainActivity, database)
+        }
+
         setContent {
             FoodAnalyzerTheme {
                 MainScreen()
