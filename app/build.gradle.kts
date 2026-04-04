@@ -2,7 +2,7 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
-}
+    id("com.google.devtools.ksp") version "2.0.21-1.0.27"}
 
 android {
     namespace = "com.example.foodanalyzer"
@@ -73,4 +73,10 @@ dependencies {
     implementation("androidx.camera:camera-lifecycle:${camerax_version}")
     // CameraX 뷰 (PreviewView 등)
     implementation("androidx.camera:camera-view:${camerax_version}")
+
+    implementation("io.coil-kt:coil-compose:2.6.0")
+
+    implementation("androidx.room:room-runtime:2.7.1")
+    implementation("androidx.room:room-ktx:2.7.1")
+    ksp("androidx.room:room-compiler:2.7.1")
 }
