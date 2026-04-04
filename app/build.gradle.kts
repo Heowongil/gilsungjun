@@ -49,6 +49,10 @@ dependencies {
     implementation(libs.androidx.compose.ui.graphics)
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material3)
+    implementation(libs.androidx.appcompat)
+    implementation(libs.material)
+    implementation(libs.androidx.activity)
+    implementation(libs.androidx.constraintlayout)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
@@ -61,6 +65,14 @@ dependencies {
     implementation("androidx.compose.material3:material3:1.2.1")
     implementation("androidx.compose.material:material-icons-extended")
 
+    // CameraX 기본 및 카메라2 기능
+    val camerax_version = "1.3.1"
+    implementation("androidx.camera:camera-core:${camerax_version}")
+    implementation("androidx.camera:camera-camera2:${camerax_version}")
+    // CameraX 라이프사이클 관리
+    implementation("androidx.camera:camera-lifecycle:${camerax_version}")
+    // CameraX 뷰 (PreviewView 등)
+    implementation("androidx.camera:camera-view:${camerax_version}")
 
     implementation("io.coil-kt:coil-compose:2.6.0")
 
