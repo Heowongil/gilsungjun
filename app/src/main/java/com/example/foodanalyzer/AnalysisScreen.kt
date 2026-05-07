@@ -421,6 +421,29 @@ fun MealCard(
                             modifier = Modifier.size(22.dp)
                         )
                     }
+                    Spacer(modifier = Modifier.width(8.dp))
+
+// 음성 인식 버튼
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .size(40.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFFFFF3E0))
+                            .clickable {
+                                val intent = Intent(context, search.SearchActivity::class.java)
+                                context.startActivity(intent)
+                            }
+                    ) {
+                        Icon(
+                            Icons.Default.Add,
+                            contentDescription = "음성으로 입력",
+                            tint = Color(0xFFFF9800),
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+
+
                 }
             }
 
