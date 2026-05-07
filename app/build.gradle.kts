@@ -67,4 +67,5 @@ dependencies {
     implementation("com.google.ai.client.generativeai:generativeai:0.9.0")
     // 비동기 작업(코루틴) 라이브러리
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
+    implementation(libs.androidx.appcompat)
 }
