@@ -43,6 +43,8 @@ dependencies {
 
     implementation("androidx.navigation:navigation-compose:2.7.7")
     implementation("androidx.compose.material3:material3:1.2.1")
+    implementation("androidx.appcompat:appcompat:1.7.0")
+    implementation("androidx.constraintlayout:constraintlayout:2.1.4")
 
     // --- 팀원들이 수정한 부분 + B님의 버전 수정 합침 ---
     implementation("androidx.compose.material:material-icons-extended:1.6.0") // B님이 고친 버전 유지!

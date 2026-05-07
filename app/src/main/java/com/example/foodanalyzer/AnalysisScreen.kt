@@ -38,6 +38,15 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.rememberAsyncImagePainter
 import java.time.LocalDate
+import android.content.Intent
+import androidx.compose.ui.platform.LocalContext
+import com.example.foodanalyzer.data.FoodRepository
+import com.example.foodanalyzer.data.entity.Food
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
 
 // ───────────────────────────────────────────────
 // 색상
@@ -85,22 +94,23 @@ data class MealResult(
 // ───────────────────────────────────────────────
 // 더미 DB
 // ───────────────────────────────────────────────
-val foodDatabase = mapOf(
-    "피자"    to RecognizedFood(0, "피자",    "", 550, 65, 25, 25),
-    "음료"    to RecognizedFood(0, "음료",    "",   0,  0,  0,  0),
-    "제로콜라" to RecognizedFood(0, "제로콜라", "",   0,  0,  0,  0),
-    "치킨"    to RecognizedFood(0, "치킨",    "", 400, 20, 30, 22),
-    "밥"      to RecognizedFood(0, "밥",      "", 300, 65,  5,  1)
-)
-
-fun lookupNutrition(name: String, amount: String): RecognizedFood {
-    val base = foodDatabase[name] ?: RecognizedFood(0, name, amount)
-    return base.copy(amount = amount)
+// Room DB에서 음식 검색 결과를 RecognizedFood로 변환
+fun Food.toRecognizedFood(amount: String = "1인분"): RecognizedFood {
+    return RecognizedFood(
+        id = this.id,
+        name = this.name,
+        amount = amount,
+        kcal = this.calories.toInt(),
+        carbs = this.carb.toInt(),
+        protein = this.protein.toInt(),
+        fat = this.fat.toInt()
+    )
 }
 
+// AI 인식 실패 시 임시 결과 (나중에 YOLO 모델로 교체)
 fun getFakeAiResult(): List<RecognizedFood> = listOf(
-    RecognizedFood(1, "피자",    "2조각", 550, 65, 25, 25),
-    RecognizedFood(2, "제로콜라", "1잔",    0,  0,  0,  0)
+    RecognizedFood(1, "흰쌀밥", "1공기", 313, 68, 5, 0),
+    RecognizedFood(2, "김치", "1접시", 15, 2, 1, 0)
 )
 
 // ───────────────────────────────────────────────
@@ -133,6 +143,54 @@ fun AnalysisScreen() {
 
     // 결과 화면용
     var confirmedFoods by remember { mutableStateOf<List<RecognizedFood>>(emptyList()) }
+
+    val context = LocalContext.current
+    var searchQuery by remember { mutableStateOf("") }
+    var searchResults by remember { mutableStateOf<List<RecognizedFood>>(emptyList()) }
+    var isSearching by remember { mutableStateOf(false) }
+
+    // 앱 시작 시 DB에서 오늘 데이터 불러오기
+    LaunchedEffect(selectedDate) {
+        val db = com.example.foodanalyzer.data.AppDatabase.getInstance(context)
+        val dao = db.dailyLogDao()
+        val logs = dao.getByDate(selectedDate.toString())
+
+        // 식사 타입별로 그룹화해서 mealResultMap에 넣기
+        val grouped = logs.groupBy { it.mealType }
+        grouped.forEach { (mealLabel, logList) ->
+            val mealType = MealType.entries.find { it.label == mealLabel } ?: return@forEach
+            val key = "${selectedDate}_${mealType.name}"
+            val foods = logList.map { log ->
+                RecognizedFood(
+                    id = log.foodId,
+                    name = log.foodName,
+                    amount = "${log.weightG.toInt()}g",
+                    kcal = log.calories.toInt(),
+                    carbs = log.carb.toInt(),
+                    protein = log.protein.toInt(),
+                    fat = log.fat.toInt()
+                )
+            }
+            mealResultMap[key] = MealResult(foods)
+        }
+    }
+
+    // 검색 함수
+    fun searchFood(query: String) {
+        if (query.isBlank()) {
+            searchResults = emptyList()
+            return
+        }
+        isSearching = true
+        CoroutineScope(Dispatchers.IO).launch {
+            val repo = FoodRepository(context)
+            val results = repo.searchFood(query)
+            withContext(Dispatchers.Main) {
+                searchResults = results.map { it.toRecognizedFood() }
+                isSearching = false
+            }
+        }
+    }
 
     fun photoKey(date: LocalDate, meal: MealType) = "${date}_${meal.name}"
 
@@ -197,11 +255,22 @@ fun AnalysisScreen() {
                 foodList    = editFoodList,
                 editAmounts = editAmounts,
                 onBack      = { currentStep = AnalysisStep.MEAL_LIST },
-                onConfirm   = { confirmed ->
-                    confirmedFoods = confirmed.map {
-                        lookupNutrition(it.name, it.amount).copy(id = it.id)
+                onConfirm = { confirmed ->
+                    CoroutineScope(Dispatchers.IO).launch {
+                        val repo = FoodRepository(context)
+                        val result = confirmed.map { food ->
+                            val dbFood = repo.searchFood(food.name).firstOrNull()
+                            if (dbFood != null) {
+                                dbFood.toRecognizedFood(food.amount).copy(id = food.id)
+                            } else {
+                                food // DB에 없으면 그냥 원래 값 사용
+                            }
+                        }
+                        withContext(Dispatchers.Main) {
+                            confirmedFoods = result
+                            currentStep = AnalysisStep.RESULT
+                        }
                     }
-                    currentStep = AnalysisStep.RESULT
                 }
             )
         }
@@ -212,9 +281,30 @@ fun AnalysisScreen() {
                 foods    = confirmedFoods,
                 onReEdit = { currentStep = AnalysisStep.CONFIRM },
                 onComplete = {
-                    // 결과를 mealResultMap에 저장 후 메인으로
                     val key = "${selectedDate}_${currentMeal?.name}"
+                    // 메모리에도 저장 (화면 즉시 반영용)
                     mealResultMap[key] = MealResult(confirmedFoods)
+
+                    // Room DB에도 저장 (앱 재시작해도 유지)
+                    CoroutineScope(Dispatchers.IO).launch {
+                        val db = com.example.foodanalyzer.data.AppDatabase.getInstance(context)
+                        val dao = db.dailyLogDao()
+                        confirmedFoods.forEach { food ->
+                            dao.insert(
+                                com.example.foodanalyzer.data.entity.DailyLog(
+                                    date = selectedDate.toString(),
+                                    foodId = food.id,
+                                    foodName = food.name,
+                                    weightG = 100.0,
+                                    calories = food.kcal.toDouble(),
+                                    carb = food.carbs.toDouble(),
+                                    protein = food.protein.toDouble(),
+                                    fat = food.fat.toDouble(),
+                                    mealType = currentMeal?.label ?: "기타"
+                                )
+                            )
+                        }
+                    }
                     currentStep = AnalysisStep.MEAL_LIST
                 }
             )
@@ -238,6 +328,17 @@ fun MealCard(
     val launcher = rememberLauncherForActivityResult(
         ActivityResultContracts.GetContent()
     ) { uri: Uri? -> uri?.let { onPhotoSelected(it) } }
+
+    val cameraLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == android.app.Activity.RESULT_OK) {
+            val uriString = result.data?.getStringExtra("photo_uri")
+            uriString?.let { onPhotoSelected(Uri.parse(it)) }
+        }
+    }
+
+    val context = LocalContext.current
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -282,6 +383,7 @@ fun MealCard(
                         Text("수정", fontSize = 13.sp, color = Color(0xFF888888))
                     }
                 } else {
+                    // 갤러리 버튼
                     Box(
                         contentAlignment = Alignment.Center,
                         modifier = Modifier
@@ -292,8 +394,30 @@ fun MealCard(
                     ) {
                         Icon(
                             Icons.Default.Add,
-                            contentDescription = "사진 추가",
+                            contentDescription = "갤러리에서 선택",
                             tint = PlusBlueIcon,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.width(8.dp))
+
+// 카메라 버튼
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .size(40.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFFE8F5E9))
+                            .clickable {
+                                val intent = Intent(context, com.example.foodanalyzer.camera.CameraActivity::class.java)
+                                cameraLauncher.launch(intent)
+                            }
+                    ) {
+                        Icon(
+                            Icons.Default.Add,
+                            contentDescription = "카메라로 촬영",
+                            tint = Color(0xFF4CAF50),
                             modifier = Modifier.size(22.dp)
                         )
                     }
