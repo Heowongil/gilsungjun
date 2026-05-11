@@ -46,7 +46,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-
+import android.graphics.BitmapFactory
+import com.example.foodanalyzer.camera.FoodClassifier
 
 // ───────────────────────────────────────────────
 // 색상
@@ -230,7 +231,43 @@ fun AnalysisScreen() {
                             },
                             onAnalyze = {
                                 currentMeal = meal
-                                val aiResult = getFakeAiResult()
+                                val key = photoKey(selectedDate, meal)
+                                val photoUri = photoMap[key]
+
+                                // TFLite 추론
+                                val aiResult = if (photoUri != null) {
+                                    try {
+                                        val inputStream = context.contentResolver.openInputStream(photoUri)
+                                        val bitmap = BitmapFactory.decodeStream(inputStream)
+                                        val classifier = FoodClassifier(context)
+                                        val results = classifier.classify(bitmap)
+                                        classifier.close()
+
+                                        android.util.Log.d("TFLite", "추론 결과 개수: ${results.size}")
+                                        results.forEach { android.util.Log.d("TFLite", "결과: ${it.label} / ${it.confidence}") }
+
+                                        if (results.isNotEmpty()) {
+                                            results.mapIndexed { index, result ->
+                                                RecognizedFood(
+                                                    id = index,
+                                                    name = result.label,
+                                                    amount = "1인분",
+                                                    kcal = 0, carbs = 0, protein = 0, fat = 0
+                                                )
+                                            }
+                                        } else {
+                                            android.util.Log.d("TFLite", "결과 없음 → 더미 사용")
+                                            getFakeAiResult()
+                                        }
+                                    } catch (e: Exception) {
+                                        android.util.Log.e("TFLite", "에러 발생: ${e.message}", e)
+                                        getFakeAiResult()
+                                    }
+                                } else {
+                                    android.util.Log.d("TFLite", "photoUri null → 더미 사용")
+                                    getFakeAiResult()
+                                }
+
                                 editFoodList.clear()
                                 editFoodList.addAll(aiResult)
                                 editAmounts.clear()
