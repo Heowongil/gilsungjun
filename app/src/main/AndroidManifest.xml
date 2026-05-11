@@ -16,8 +16,8 @@
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@style/Theme.FoodAnalyzer">
-
+        android:theme="@style/Theme.FoodAnalyzer"
+        android:usesCleartextTraffic="true">
 
 
 
@@ -38,6 +38,10 @@
             android:exported="true"
             android:theme="@style/Theme.AppCompat.Light.NoActionBar">
         </activity>
+
+        <activity
+            android:name=".camera.BarcodeScannerActivity"
+            android:theme="@style/Theme.AppCompat.Light.NoActionBar" />
 
         <activity
             android:name="search.SearchActivity"

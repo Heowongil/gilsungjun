@@ -39,7 +39,6 @@ class FoodClassifier(context: Context) {
     )
 
     fun classify(bitmap: Bitmap): List<DetectionResult> {
-        // Bitmap → ByteBuffer 변환 (INT8이라 byte 단위)
         val resized = Bitmap.createScaledBitmap(bitmap, inputSize, inputSize, true)
         val inputBuffer = ByteBuffer.allocateDirect(1 * inputSize * inputSize * 3 * 4)
         inputBuffer.order(ByteOrder.nativeOrder())
@@ -47,39 +46,52 @@ class FoodClassifier(context: Context) {
         val pixels = IntArray(inputSize * inputSize)
         resized.getPixels(pixels, 0, inputSize, 0, 0, inputSize, inputSize)
         for (pixel in pixels) {
-            inputBuffer.put(((pixel shr 16) and 0xFF).toByte()) // R
-            inputBuffer.put(((pixel shr 8) and 0xFF).toByte())  // G
-            inputBuffer.put((pixel and 0xFF).toByte())           // B
+            inputBuffer.put(((pixel shr 16) and 0xFF).toByte())
+            inputBuffer.put(((pixel shr 8) and 0xFF).toByte())
+            inputBuffer.put((pixel and 0xFF).toByte())
+            inputBuffer.put(0) // padding (4바이트 맞추기)
         }
 
-        // 출력 버퍼 (YOLOv8 output shape 확인 필요)
         val outputShape = interpreter.getOutputTensor(0).shape()
+        android.util.Log.d("TFLite", "output shape: ${outputShape.toList()}")
+
+        // shape: [1, 152, 5376] → [배치, 4+클래스, 앵커]
         val outputBuffer = Array(1) { Array(outputShape[1]) { FloatArray(outputShape[2]) } }
 
         inputBuffer.rewind()
         interpreter.run(inputBuffer, outputBuffer)
 
-        // 결과 파싱 (confidence 기준 상위 5개)
-        return parseResults(outputBuffer[0])
+        // transpose해서 파싱: [앵커, 4+클래스] 형태로 변환
+        return parseResultsTransposed(outputBuffer[0])
     }
 
-    private fun parseResults(output: Array<FloatArray>): List<DetectionResult> {
+    private fun parseResultsTransposed(output: Array<FloatArray>): List<DetectionResult> {
+        // output: [152, 5376] → 152=4+148클래스, 5376=앵커수
+        val numAnchors = output[0].size  // 5376
         val results = mutableListOf<DetectionResult>()
 
-        for (i in output.indices) {
-            val row = output[i]
-            if (row.size < 4 + numClasses) continue
+        for (anchor in 0 until numAnchors) {
+            // 클래스 스코어: index 4~151
+            var maxScore = 0f
+            var maxClass = 0
+            for (c in 0 until numClasses) {
+                val score = output[4 + c][anchor]
+                if (score > maxScore) {
+                    maxScore = score
+                    maxClass = c
+                }
+            }
 
-            val classScores = row.slice(4 until 4 + numClasses)
-            val maxScore = classScores.max()
-            val classIndex = classScores.indexOf(maxScore)
-
-            if (maxScore > 0.3f && classIndex < labels.size) {
-                results.add(DetectionResult(labels[classIndex], maxScore))
+            if (maxScore > 0.01f && maxClass < labels.size) {
+                results.add(DetectionResult(labels[maxClass], maxScore))
             }
         }
 
-        return results.sortedByDescending { it.confidence }.take(5)
+        val sorted = results.sortedByDescending { it.confidence }.take(5)
+        android.util.Log.d("TFLite", "=== 파싱 결과 ===")
+        android.util.Log.d("TFLite", "후보 개수: ${results.size}")
+        sorted.forEach { android.util.Log.d("TFLite", "  ${it.label}: ${it.confidence}") }
+        return sorted
     }
 
     fun close() {

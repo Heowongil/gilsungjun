@@ -48,7 +48,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import android.graphics.BitmapFactory
 import com.example.foodanalyzer.camera.FoodClassifier
-
+import com.example.foodanalyzer.data.GeminiNutritionService
+import kotlinx.coroutines.withContext
+import android.widget.Toast
 // ───────────────────────────────────────────────
 // 색상
 // ───────────────────────────────────────────────
@@ -234,51 +236,75 @@ fun AnalysisScreen() {
                                 val key = photoKey(selectedDate, meal)
                                 val photoUri = photoMap[key]
 
-                                // TFLite 추론
-                                val aiResult = if (photoUri != null) {
-                                    try {
-                                        val inputStream = context.contentResolver.openInputStream(photoUri)
-                                        val bitmap = BitmapFactory.decodeStream(inputStream)
-                                        val classifier = FoodClassifier(context)
-                                        val results = classifier.classify(bitmap)
-                                        classifier.close()
+                                if (photoUri != null) {
+                                    CoroutineScope(Dispatchers.IO).launch {
+                                        try {
+                                            val inputStream = context.contentResolver.openInputStream(photoUri)
+                                            val bitmap = BitmapFactory.decodeStream(inputStream)
+                                            val classifier = FoodClassifier(context)
+                                            val results = classifier.classify(bitmap)
+                                            classifier.close()
 
-                                        android.util.Log.d("TFLite", "추론 결과 개수: ${results.size}")
-                                        results.forEach { android.util.Log.d("TFLite", "결과: ${it.label} / ${it.confidence}") }
+                                            android.util.Log.d("TFLite", "추론 결과 개수: ${results.size}")
+                                            results.forEach { android.util.Log.d("TFLite", "결과: ${it.label} / ${it.confidence}") }
 
-                                        if (results.isNotEmpty()) {
-                                            results.mapIndexed { index, result ->
+                                            // Gemini로 영양성분 조회
+                                            // Gemini로 영양성분 한 번에 조회
+                                            val foodLabels = results.map { it.label }
+                                            val nutritionList = GeminiNutritionService.getNutritionList(foodLabels)
+
+                                            val recognizedFoods = results.mapIndexed { index, result ->
+                                                val nutrition = nutritionList.getOrNull(index)
                                                 RecognizedFood(
-                                                    id = index,
-                                                    name = result.label,
-                                                    amount = "1인분",
-                                                    kcal = 0, carbs = 0, protein = 0, fat = 0
+                                                    id      = index,
+                                                    name    = nutrition?.foodName ?: result.label,
+                                                    amount  = "1인분",
+                                                    kcal    = nutrition?.kcal ?: 0,
+                                                    carbs   = nutrition?.carbs ?: 0,
+                                                    protein = nutrition?.protein ?: 0,
+                                                    fat     = nutrition?.fat ?: 0
                                                 )
                                             }
-                                        } else {
-                                            android.util.Log.d("TFLite", "결과 없음 → 더미 사용")
-                                            getFakeAiResult()
+
+                                            withContext(Dispatchers.Main) {
+                                                editFoodList.clear()
+                                                editFoodList.addAll(recognizedFoods)
+                                                editAmounts.clear()
+                                                recognizedFoods.forEach { editAmounts[it.id] = it.amount }
+                                                currentStep = AnalysisStep.CONFIRM
+                                            }
+                                        } catch (e: Exception) {
+                                            android.util.Log.e("TFLite", "에러: ${e.message}")
+                                            withContext(Dispatchers.Main) {
+                                                editFoodList.clear()
+                                                editFoodList.addAll(getFakeAiResult())
+                                                editAmounts.clear()
+                                                getFakeAiResult().forEach { editAmounts[it.id] = it.amount }
+                                                currentStep = AnalysisStep.CONFIRM
+                                            }
                                         }
-                                    } catch (e: Exception) {
-                                        android.util.Log.e("TFLite", "에러 발생: ${e.message}", e)
-                                        getFakeAiResult()
                                     }
                                 } else {
-                                    android.util.Log.d("TFLite", "photoUri null → 더미 사용")
-                                    getFakeAiResult()
+                                    editFoodList.clear()
+                                    editFoodList.addAll(getFakeAiResult())
+                                    editAmounts.clear()
+                                    getFakeAiResult().forEach { editAmounts[it.id] = it.amount }
+                                    currentStep = AnalysisStep.CONFIRM
                                 }
-
-                                editFoodList.clear()
-                                editFoodList.addAll(aiResult)
-                                editAmounts.clear()
-                                aiResult.forEach { editAmounts[it.id] = it.amount }
-                                currentStep = AnalysisStep.CONFIRM
                             },
                             onReEdit = {
                                 // 수정 버튼: 사진과 결과 초기화 후 메인으로
                                 photoMap.remove(key)
                                 mealResultMap.remove(key)
                                 // currentStep은 이미 MEAL_LIST이므로 별도 변경 불필요
+                            },
+                            onBarcodeResult = { food ->
+                                currentMeal = meal
+                                editFoodList.clear()
+                                editFoodList.add(food)
+                                editAmounts.clear()
+                                editAmounts[food.id] = food.amount
+                                currentStep = AnalysisStep.CONFIRM
                             }
                         )
                     }
@@ -360,8 +386,12 @@ fun MealCard(
     onPhotoSelected: (Uri) -> Unit,
     onReset: () -> Unit,
     onAnalyze: () -> Unit,
-    onReEdit: () -> Unit            // 수정 버튼
+    onReEdit: () -> Unit,
+    onBarcodeResult: (RecognizedFood) -> Unit
 ) {
+
+    val context = LocalContext.current
+
     val launcher = rememberLauncherForActivityResult(
         ActivityResultContracts.GetContent()
     ) { uri: Uri? -> uri?.let { onPhotoSelected(it) } }
@@ -375,7 +405,34 @@ fun MealCard(
         }
     }
 
-    val context = LocalContext.current
+    val barcodeLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == android.app.Activity.RESULT_OK) {
+            val barcode = result.data?.getStringExtra("barcode")
+            if (barcode != null) {
+                CoroutineScope(Dispatchers.IO).launch {
+                    val food = com.example.foodanalyzer.data.FoodSafetyService.getFoodByBarcode(barcode)
+                    withContext(Dispatchers.Main) {
+                        if (food != null) {
+                            onBarcodeResult(RecognizedFood(
+                                id      = 0,
+                                name    = food.foodName,
+                                amount  = "${food.servingSize.toInt()}g",
+                                kcal    = food.kcal.toInt(),
+                                carbs   = food.carbs.toInt(),
+                                protein = food.protein.toInt(),
+                                fat     = food.fat.toInt()
+                            ))
+                        } else {
+                            Toast.makeText(context, "등록되지 않은 바코드입니다.", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
+            }
+        }
+    }
+
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -479,7 +536,25 @@ fun MealCard(
                             modifier = Modifier.size(22.dp)
                         )
                     }
-
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .size(40.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFFF3E5F5))
+                            .clickable {
+                                val intent = Intent(context, com.example.foodanalyzer.camera.BarcodeScannerActivity::class.java)
+                                barcodeLauncher.launch(intent)
+                            }
+                    ) {
+                        Icon(
+                            Icons.Default.Add,
+                            contentDescription = "바코드 스캔",
+                            tint = Color(0xFF9C27B0),
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
 
                 }
             }
@@ -658,6 +733,12 @@ fun FoodConfirmScreen(
                         onDelete = {
                             foodList.remove(food)
                             editAmounts.remove(food.id)
+                        },
+                        onNameChange = { newName ->  // ← 추가
+                            val index = foodList.indexOf(food)
+                            if (index != -1) {
+                                foodList[index] = food.copy(name = newName)
+                            }
                         }
                     )
                     Spacer(modifier = Modifier.height(12.dp))
@@ -691,10 +772,13 @@ fun FoodItemCard(
     food: RecognizedFood,
     currentAmount: String,
     onAmountChange: (String) -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    onNameChange: (String) -> Unit
 ) {
-    var isEditing  by remember { mutableStateOf(false) }
+    var isEditingAmount by remember { mutableStateOf(false) }
+    var isEditingName by remember { mutableStateOf(false) }
     var tempAmount by remember(currentAmount) { mutableStateOf(currentAmount) }
+    var tempName by remember(food.name) { mutableStateOf(food.name) }
     val focusManager = LocalFocusManager.current
 
     Card(
@@ -704,6 +788,8 @@ fun FoodItemCard(
         elevation = CardDefaults.cardElevation(1.dp)
     ) {
         Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 16.dp)) {
+
+            // ── 음식 이름 행 ──
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -712,7 +798,47 @@ fun FoodItemCard(
                 Column(modifier = Modifier.weight(1f)) {
                     Text("음식 이름", fontSize = 12.sp, color = Color(0xFFAAAAAA))
                     Spacer(modifier = Modifier.height(2.dp))
-                    Text(food.name, fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Color(0xFF1A1A1A))
+                    if (isEditingName) {
+                        BasicTextField(
+                            value = tempName,
+                            onValueChange = { tempName = it },
+                            textStyle = TextStyle(fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Color(0xFF1A1A1A)),
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                            keyboardActions = KeyboardActions(onDone = {
+                                onNameChange(tempName)
+                                isEditingName = false
+                                focusManager.clearFocus()
+                            }),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .border(1.5.dp, Color(0xFF5B9BD5), RoundedCornerShape(8.dp))
+                                .padding(horizontal = 12.dp, vertical = 8.dp)
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            "✓ 확인", fontSize = 13.sp, color = Color(0xFF4CAF50),
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.clickable {
+                                onNameChange(tempName)
+                                isEditingName = false
+                                focusManager.clearFocus()
+                            }
+                        )
+                    } else {
+                        Text(
+                            text = food.name,
+                            fontSize = 17.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF1A1A1A),
+                            modifier = Modifier.clickable { isEditingName = true }
+                        )
+                        Text(
+                            "✏ 이름 수정",
+                            fontSize = 11.sp,
+                            color = Color(0xFFAAAAAA),
+                            modifier = Modifier.clickable { isEditingName = true }
+                        )
+                    }
                 }
                 IconButton(onClick = onDelete) {
                     Icon(Icons.Default.Delete, contentDescription = "삭제", tint = Color(0xFFE57373), modifier = Modifier.size(22.dp))
@@ -721,11 +847,11 @@ fun FoodItemCard(
 
             HorizontalDivider(color = Color(0xFFF0F0F0), thickness = 1.dp, modifier = Modifier.padding(vertical = 10.dp))
 
+            // ── 양 수정 행 ──
             Column(modifier = Modifier.fillMaxWidth()) {
                 Text("양", fontSize = 12.sp, color = Color(0xFFAAAAAA))
                 Spacer(modifier = Modifier.height(4.dp))
-
-                if (isEditing) {
+                if (isEditingAmount) {
                     BasicTextField(
                         value = tempAmount,
                         onValueChange = { tempAmount = it },
@@ -733,7 +859,7 @@ fun FoodItemCard(
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                         keyboardActions = KeyboardActions(onDone = {
                             onAmountChange(tempAmount)
-                            isEditing = false
+                            isEditingAmount = false
                             focusManager.clearFocus()
                         }),
                         modifier = Modifier
@@ -747,7 +873,7 @@ fun FoodItemCard(
                         fontWeight = FontWeight.SemiBold,
                         modifier = Modifier.clickable {
                             onAmountChange(tempAmount)
-                            isEditing = false
+                            isEditingAmount = false
                             focusManager.clearFocus()
                         }
                     )
@@ -756,7 +882,7 @@ fun FoodItemCard(
                         text = currentAmount,
                         fontSize = 15.sp, color = Color(0xFF444444),
                         modifier = Modifier
-                            .clickable { isEditing = true }
+                            .clickable { isEditingAmount = true }
                             .padding(vertical = 2.dp)
                     )
                 }

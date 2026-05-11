@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -16,6 +18,15 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+
+
+        val localProperties = Properties()
+        localProperties.load(rootProject.file("local.properties").inputStream())
+        buildConfigField("String", "GEMINI_API_KEY", "\"${localProperties["GEMINI_API_KEY"]}\"")
+
+        buildConfigField("String", "FOOD_SAFETY_API_KEY", "\"${localProperties["FOOD_SAFETY_API_KEY"]}\"")
+        buildConfigField("String", "FOOD_BARCODE_API_KEY", "\"${localProperties["FOOD_BARCODE_API_KEY"]}\"")
     }
 
     buildTypes {
@@ -36,6 +47,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
     androidResources {
         noCompress += "tflite"
@@ -76,4 +88,7 @@ dependencies {
     // 비동기 작업(코루틴) 라이브러리
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
     implementation(libs.androidx.appcompat)
+
+    // ML Kit 바코드 스캔
+    implementation("com.google.mlkit:barcode-scanning:17.3.0")
 }
