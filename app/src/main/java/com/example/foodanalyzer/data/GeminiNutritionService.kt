@@ -23,7 +23,7 @@ object GeminiNutritionService {
         return withContext(Dispatchers.IO) {
             try {
                 val apiKey = BuildConfig.GEMINI_API_KEY
-                val url = URL("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=$apiKey")
+                val url = URL("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=$apiKey")
                 val connection = url.openConnection() as HttpURLConnection
                 connection.requestMethod = "POST"
                 connection.setRequestProperty("Content-Type", "application/json")

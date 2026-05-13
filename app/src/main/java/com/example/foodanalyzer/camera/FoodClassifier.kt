@@ -46,10 +46,9 @@ class FoodClassifier(context: Context) {
         val pixels = IntArray(inputSize * inputSize)
         resized.getPixels(pixels, 0, inputSize, 0, 0, inputSize, inputSize)
         for (pixel in pixels) {
-            inputBuffer.put(((pixel shr 16) and 0xFF).toByte())
-            inputBuffer.put(((pixel shr 8) and 0xFF).toByte())
-            inputBuffer.put((pixel and 0xFF).toByte())
-            inputBuffer.put(0) // padding (4바이트 맞추기)
+            inputBuffer.putFloat(((pixel shr 16) and 0xFF) / 255.0f) // R
+            inputBuffer.putFloat(((pixel shr 8) and 0xFF) / 255.0f)  // G
+            inputBuffer.putFloat((pixel and 0xFF) / 255.0f)           // B
         }
 
         val outputShape = interpreter.getOutputTensor(0).shape()

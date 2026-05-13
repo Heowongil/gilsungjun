@@ -319,21 +319,8 @@ fun AnalysisScreen() {
                 editAmounts = editAmounts,
                 onBack      = { currentStep = AnalysisStep.MEAL_LIST },
                 onConfirm = { confirmed ->
-                    CoroutineScope(Dispatchers.IO).launch {
-                        val repo = FoodRepository(context)
-                        val result = confirmed.map { food ->
-                            val dbFood = repo.searchFood(food.name).firstOrNull()
-                            if (dbFood != null) {
-                                dbFood.toRecognizedFood(food.amount).copy(id = food.id)
-                            } else {
-                                food // DB에 없으면 그냥 원래 값 사용
-                            }
-                        }
-                        withContext(Dispatchers.Main) {
-                            confirmedFoods = result
-                            currentStep = AnalysisStep.RESULT
-                        }
-                    }
+                    confirmedFoods = confirmed
+                    currentStep = AnalysisStep.RESULT
                 }
             )
         }

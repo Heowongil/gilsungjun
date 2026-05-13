@@ -75,35 +75,62 @@ class SearchActivity : AppCompatActivity() {
                     // --- 여기서부터 Gemini AI 분석 시작 ---
 
                     // 1. 발급받은 API 키 넣기 (여기에 아까 메모한 키를 붙여넣으세요!)
-                    val apiKey = "AIzaSyClZuevqVBGsKBu8SxpgMG8K4ZgmQtZZVk"
-
-                    // 2. 어떤 AI를 쓸지 세팅 (flash 모델이 빠르고 좋습니다)
-                    val generativeModel = GenerativeModel(
-                        modelName = "gemini-2.5-flash",
-                        apiKey = apiKey
-                    )
-
-                    // 3. AI에게 내릴 명령(프롬프트) 작성
-                    val prompt = """
-            너는 식단 분석 전문가야. 다음 문장에서 음식 이름과 수량, 단위만 추출해서 정확히 JSON 배열 형식으로만 대답해줘. 
-            다른 말은 절대 하지 마.
-            형식 예시: [{"food": "사과", "amount": 2, "unit": "개"}, {"food": "우유", "amount": 1, "unit": "잔"}]
-            
-            문장: "$recognizedText"
-        """.trimIndent()
-
-                    // 4. AI에게 물어보기 (인터넷을 써야 하므로 Coroutine이라는 백그라운드 작업 사용)
+                    // 기존 GenerativeModel 부분 전체를 이걸로 교체
                     CoroutineScope(Dispatchers.IO).launch {
                         try {
-                            // AI 대답 기다리기
-                            val response = generativeModel.generateContent(prompt)
+                            val prompt = """
+                                너는 식단 분석 전문가야. 다음 문장에서 음식 이름과 수량, 단위만 추출해서 정확히 JSON 배열 형식으로만 대답해줘. 
+                                다른 말은 절대 하지 마.
+                                형식 예시: [{"food": "사과", "amount": 2, "unit": "개"}, {"food": "우유", "amount": 1, "unit": "잔"}]
+            
+                                문장: "$recognizedText"
+                            """.trimIndent()
 
-                            // 대답이 오면 화면(UI)에 JSON 결과 띄우기
+                            val apiKey = com.example.foodanalyzer.BuildConfig.GEMINI_API_KEY
+                            val url = java.net.URL("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=$apiKey")
+                            val connection = url.openConnection() as java.net.HttpURLConnection
+                            connection.requestMethod = "POST"
+                            connection.setRequestProperty("Content-Type", "application/json")
+                            connection.doOutput = true
+
+                            val body = org.json.JSONObject().apply {
+                                put("contents", org.json.JSONArray().apply {
+                                    put(org.json.JSONObject().apply {
+                                        put("parts", org.json.JSONArray().apply {
+                                            put(org.json.JSONObject().apply {
+                                                put("text", prompt)
+                                            })
+                                        })
+                                    })
+                                })
+
+                            }.toString()
+
+                            connection.outputStream.write(body.toByteArray())
+
+                            val responseCode = connection.responseCode
+                            val response = if (responseCode == 200) {
+                                connection.inputStream.bufferedReader().readText()
+                            } else {
+                                connection.errorStream.bufferedReader().readText()
+                            }
+                            android.util.Log.d("Search", "응답 코드: $responseCode")
+                            android.util.Log.d("Search", "응답: $response")
+
+                            val jsonResponse = org.json.JSONObject(response)
+                            val text = jsonResponse
+                                .getJSONArray("candidates")
+                                .getJSONObject(0)
+                                .getJSONObject("content")
+                                .getJSONArray("parts")
+                                .getJSONObject(0)
+                                .getString("text")
+                                .trim()
+
                             withContext(Dispatchers.Main) {
-                                tvResult.text = "AI 분석 결과:\n${response.text}"
+                                tvResult.text = "AI 분석 결과:\n$text"
                             }
                         } catch (e: Exception) {
-                            // 에러 났을 때
                             withContext(Dispatchers.Main) {
                                 tvResult.text = "AI 분석 실패: ${e.message}"
                             }
