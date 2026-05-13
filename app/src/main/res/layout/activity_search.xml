@@ -14,21 +14,38 @@
         android:textStyle="bold"
         android:layout_marginBottom="30dp" />
 
-    <!-- 검색창 (직접 타이핑용) -->
-    <EditText
-        android:id="@+id/etFoodInput"
+    <!-- 텍스트 입력창과 검색 버튼을 가로로 묶어주는 레이아웃 -->
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:hint="예: 바나나 한 개 먹었어"
-        android:padding="12dp"
-        android:background="@android:drawable/editbox_background" />
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+        <!-- 검색창 (직접 타이핑용) -->
+        <EditText
+            android:id="@+id/etFoodInput"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:hint="예: 바나나 한 개 먹었어"
+            android:padding="12dp"
+            android:background="@android:drawable/editbox_background" />
+
+        <!-- 텍스트 검색 버튼 추가 -->
+        <Button
+            android:id="@+id/btnTextSubmit"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:text="검색" />
+    </LinearLayout>
 
     <!-- 마이크 버튼 -->
     <ImageButton
         android:id="@+id/btnMic"
         android:layout_width="80dp"
         android:layout_height="80dp"
-        android:layout_marginTop="20dp"
+        android:layout_marginTop="30dp"
         android:src="@android:drawable/ic_btn_speak_now"
         android:background="?attr/selectableItemBackgroundBorderless"
         android:scaleType="fitCenter" />

@@ -1,6 +1,6 @@
 package search // 폴더 위치가 java/search 라면 이대로 유지
 
-import com.example.foodanalyzer.R
+import com.example.foodanalyzer.R // 본인 패키지명에 맞게 유지해주세요
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -8,6 +8,8 @@ import android.os.Bundle
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
+import android.widget.Button
+import android.widget.EditText
 import android.widget.ImageButton
 import android.widget.TextView
 import android.widget.Toast
@@ -25,13 +27,18 @@ class SearchActivity : AppCompatActivity() {
     private lateinit var speechRecognizer: SpeechRecognizer
     private lateinit var tvResult: TextView
     private lateinit var btnMic: ImageButton
+    private lateinit var etFoodInput: EditText
+    private lateinit var btnTextSubmit: Button
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_search)
 
+        // UI 요소 연결
         tvResult = findViewById(R.id.tvResult)
         btnMic = findViewById(R.id.btnMic)
+        etFoodInput = findViewById(R.id.etFoodInput)
+        btnTextSubmit = findViewById(R.id.btnTextSubmit)
 
         // 1. 마이크 권한 체크
         checkPermission()
@@ -44,13 +51,25 @@ class SearchActivity : AppCompatActivity() {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE, "ko-KR") // 한국어 설정
         }
 
-        // 3. 버튼 클릭 시 음성 인식 시작
+        // 3. 마이크 버튼 클릭 시 음성 인식 시작
         btnMic.setOnClickListener {
             speechRecognizer.startListening(intent)
             Toast.makeText(this, "말씀하세요!", Toast.LENGTH_SHORT).show()
         }
 
-        // 4. 결과 처리 리스너
+        // 4. 텍스트 검색 버튼 클릭 시 처리
+        btnTextSubmit.setOnClickListener {
+            val inputText = etFoodInput.text.toString()
+            if (inputText.isNotEmpty()) {
+                tvResult.text = "입력됨: $inputText\n(AI 분석 중...)"
+                analyzeDietWithAI(inputText) // 텍스트로 AI 분석 요청
+                etFoodInput.text.clear() // 전송 후 입력창 비워주기
+            } else {
+                Toast.makeText(this, "식단을 입력해주세요.", Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        // 5. 음성 인식 결과 처리 리스너
         speechRecognizer.setRecognitionListener(object : RecognitionListener {
             override fun onReadyForSpeech(params: Bundle?) {}
             override fun onBeginningOfSpeech() {}
@@ -70,51 +89,47 @@ class SearchActivity : AppCompatActivity() {
                 val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                 if (!matches.isNullOrEmpty()) {
                     val recognizedText = matches[0] // 사용자가 말한 텍스트
-                    tvResult.text = "인식됨: $recognizedText\n(AI 분석 중...)" // 일단 화면에 띄움
+                    tvResult.text = "인식됨: $recognizedText\n(AI 분석 중...)"
 
-                    // --- 여기서부터 Gemini AI 분석 시작 ---
-
-                    // 1. 발급받은 API 키 넣기 (여기에 아까 메모한 키를 붙여넣으세요!)
-                    val apiKey = "AIzaSyClZuevqVBGsKBu8SxpgMG8K4ZgmQtZZVk"
-
-                    // 2. 어떤 AI를 쓸지 세팅 (flash 모델이 빠르고 좋습니다)
-                    val generativeModel = GenerativeModel(
-                        modelName = "gemini-2.5-flash",
-                        apiKey = apiKey
-                    )
-
-                    // 3. AI에게 내릴 명령(프롬프트) 작성
-                    val prompt = """
-            너는 식단 분석 전문가야. 다음 문장에서 음식 이름과 수량, 단위만 추출해서 정확히 JSON 배열 형식으로만 대답해줘. 
-            다른 말은 절대 하지 마.
-            형식 예시: [{"food": "사과", "amount": 2, "unit": "개"}, {"food": "우유", "amount": 1, "unit": "잔"}]
-            
-            문장: "$recognizedText"
-        """.trimIndent()
-
-                    // 4. AI에게 물어보기 (인터넷을 써야 하므로 Coroutine이라는 백그라운드 작업 사용)
-                    CoroutineScope(Dispatchers.IO).launch {
-                        try {
-                            // AI 대답 기다리기
-                            val response = generativeModel.generateContent(prompt)
-
-                            // 대답이 오면 화면(UI)에 JSON 결과 띄우기
-                            withContext(Dispatchers.Main) {
-                                tvResult.text = "AI 분석 결과:\n${response.text}"
-                            }
-                        } catch (e: Exception) {
-                            // 에러 났을 때
-                            withContext(Dispatchers.Main) {
-                                tvResult.text = "AI 분석 실패: ${e.message}"
-                            }
-                        }
-                    }
+                    analyzeDietWithAI(recognizedText) // 음성으로 AI 분석 요청
                 }
             }
 
             override fun onPartialResults(partialResults: Bundle?) {}
             override fun onEvent(eventType: Int, params: Bundle?) {}
         })
+    }
+
+    // --- Gemini AI 분석을 처리하는 공통 함수 ---
+    private fun analyzeDietWithAI(inputText: String) {
+        // 💡 주의: 실제 앱을 스토어에 출시할 때는 API 키가 코드에 직접 노출되지 않도록 BuildConfig나 서버를 통해 관리하는 것이 안전합니다.
+        val apiKey = "AIzaSyClZuevqVBGsKBu8SxpgMG8K4ZgmQtZZVk"
+
+        val generativeModel = GenerativeModel(
+            modelName = "gemini-2.5-flash",
+            apiKey = apiKey
+        )
+
+        val prompt = """
+            너는 식단 분석 전문가야. 다음 문장에서 음식 이름과 수량, 단위만 추출해서 정확히 JSON 배열 형식으로만 대답해줘. 
+            다른 말은 절대 하지 마.
+            형식 예시: [{"food": "사과", "amount": 2, "unit": "개"}, {"food": "우유", "amount": 1, "unit": "잔"}]
+            
+            문장: "$inputText"
+        """.trimIndent()
+
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val response = generativeModel.generateContent(prompt)
+                withContext(Dispatchers.Main) {
+                    tvResult.text = "AI 분석 결과:\n${response.text}"
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    tvResult.text = "AI 분석 실패: ${e.message}"
+                }
+            }
+        }
     }
 
     private fun checkPermission() {
