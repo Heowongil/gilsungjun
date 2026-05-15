@@ -19,6 +19,11 @@ import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
 import com.example.foodanalyzer.data.AppDatabase
 import com.example.foodanalyzer.data.DatabaseInitializer
+import com.google.firebase.auth.FirebaseAuth
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 // 하단 탭 정보를 담는 데이터 클래스
 sealed class BottomNavItem(
     val route: String,
@@ -35,7 +40,6 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // 앱 시작 시 DB 초기화
         val database = AppDatabase.getInstance(this)
         lifecycleScope.launch {
             DatabaseInitializer.initializeIfNeeded(this@MainActivity, database)
@@ -46,7 +50,16 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             FoodAnalyzerTheme {
-                MainScreen()
+                val auth = FirebaseAuth.getInstance()
+                var isLoggedIn by remember {
+                    mutableStateOf(auth.currentUser != null)
+                }
+
+                if (isLoggedIn) {
+                    MainScreen()
+                } else {
+                    LoginScreen(onLoginSuccess = { isLoggedIn = true })
+                }
             }
         }
     }

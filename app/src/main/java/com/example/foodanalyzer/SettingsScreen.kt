@@ -113,7 +113,21 @@ fun SettingsScreen() {
             message      = "정말 로그아웃 하시겠어요?",
             confirmText  = "로그아웃",
             confirmColor = LogoutRed,
-            onConfirm    = { showLogout = false },
+            onConfirm = {
+                val googleSignInClient = com.google.android.gms.auth.api.signin.GoogleSignIn.getClient(
+                    context,
+                    com.google.android.gms.auth.api.signin.GoogleSignInOptions.Builder(
+                        com.google.android.gms.auth.api.signin.GoogleSignInOptions.DEFAULT_SIGN_IN
+                    ).build()
+                )
+                googleSignInClient.signOut().addOnCompleteListener {
+                    com.google.firebase.auth.FirebaseAuth.getInstance().signOut()
+                    showLogout = false
+                    val intent = context.packageManager.getLaunchIntentForPackage(context.packageName)
+                    intent?.addFlags(android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                    context.startActivity(intent)
+                }
+            },
             onDismiss    = { showLogout = false }
         )
     }

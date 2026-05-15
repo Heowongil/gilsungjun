@@ -4,7 +4,10 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
-    id("com.google.devtools.ksp") version "2.0.21-1.0.27"}
+    id("com.google.devtools.ksp") version "2.0.21-1.0.27"
+    id("com.google.gms.google-services")
+}
+
 
 android {
     namespace = "com.example.foodanalyzer"
@@ -91,4 +94,10 @@ dependencies {
 
     // ML Kit 바코드 스캔
     implementation("com.google.mlkit:barcode-scanning:17.3.0")
+
+    implementation(platform("com.google.firebase:firebase-bom:33.1.0"))  // ← 추가
+    implementation("com.google.firebase:firebase-auth")  // ← 추가
+    implementation("com.google.firebase:firebase-firestore")  // ← 추가
+    implementation("com.google.android.gms:play-services-auth:21.0.0")
+    implementation("com.google.guava:guava:32.1.3-android")
 }
