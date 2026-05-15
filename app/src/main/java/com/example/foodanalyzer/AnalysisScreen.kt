@@ -305,7 +305,37 @@ fun AnalysisScreen() {
                                 editAmounts.clear()
                                 editAmounts[food.id] = food.amount
                                 currentStep = AnalysisStep.CONFIRM
+                            },
+                            onSearchResult = { foods ->
+                                currentMeal = meal
+                                editFoodList.clear()
+                                editFoodList.addAll(foods)
+                                editAmounts.clear()
+                                foods.forEach { editAmounts[it.id] = it.amount }
+
+                                CoroutineScope(Dispatchers.IO).launch {
+                                    val foodLabels = foods.map { it.name }
+                                    val nutritionList = GeminiNutritionService.getNutritionList(foodLabels)
+                                    val updatedFoods = foods.mapIndexed { index, food ->
+                                        val nutrition = nutritionList.getOrNull(index)
+                                        food.copy(
+                                            name    = nutrition?.foodName ?: food.name,
+                                            kcal    = nutrition?.kcal ?: 0,
+                                            carbs   = nutrition?.carbs ?: 0,
+                                            protein = nutrition?.protein ?: 0,
+                                            fat     = nutrition?.fat ?: 0
+                                        )
+                                    }
+                                    withContext(Dispatchers.Main) {
+                                        editFoodList.clear()
+                                        editFoodList.addAll(updatedFoods)
+                                        editAmounts.clear()
+                                        updatedFoods.forEach { editAmounts[it.id] = it.amount }
+                                        currentStep = AnalysisStep.CONFIRM
+                                    }
+                                }
                             }
+
                         )
                     }
                 }
@@ -374,7 +404,8 @@ fun MealCard(
     onReset: () -> Unit,
     onAnalyze: () -> Unit,
     onReEdit: () -> Unit,
-    onBarcodeResult: (RecognizedFood) -> Unit
+    onBarcodeResult: (RecognizedFood) -> Unit,
+    onSearchResult: (List<RecognizedFood>) -> Unit
 ) {
 
     val context = LocalContext.current
@@ -416,6 +447,27 @@ fun MealCard(
                         }
                     }
                 }
+            }
+        }
+    }
+
+    val searchLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == android.app.Activity.RESULT_OK) {
+            val json = result.data?.getStringExtra("food_list_json") ?: return@rememberLauncherForActivityResult
+            try {
+                val jsonArray = org.json.JSONArray(json)
+                val foods = mutableListOf<RecognizedFood>()
+                for (i in 0 until jsonArray.length()) {
+                    val obj = jsonArray.getJSONObject(i)
+                    val foodName = obj.getString("food")
+                    val amount = "${obj.optInt("amount", 1)}${obj.optString("unit", "인분")}"
+                    foods.add(RecognizedFood(id = i, name = foodName, amount = amount))
+                }
+                onSearchResult(foods)
+            } catch (e: Exception) {
+                android.util.Log.e("Search", "파싱 실패: ${e.message}")
             }
         }
     }
@@ -512,8 +564,9 @@ fun MealCard(
                             .clip(CircleShape)
                             .background(Color(0xFFFFF3E0))
                             .clickable {
+// 변경
                                 val intent = Intent(context, search.SearchActivity::class.java)
-                                context.startActivity(intent)
+                                searchLauncher.launch(intent)
                             }
                     ) {
                         Icon(
@@ -671,6 +724,8 @@ fun FoodConfirmScreen(
     onBack: () -> Unit,
     onConfirm: (List<RecognizedFood>) -> Unit
 ) {
+    var inputFoodName by remember { mutableStateOf("") }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -707,9 +762,72 @@ fun FoodConfirmScreen(
             )
             Spacer(modifier = Modifier.height(20.dp))
 
+            // ── 음식 직접 추가 입력창 ──
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                OutlinedTextField(
+                    value = inputFoodName,
+                    onValueChange = { inputFoodName = it },
+                    placeholder = { Text("음식 이름 직접 입력", fontSize = 14.sp) },
+                    modifier = Modifier.weight(1f),
+                    singleLine = true,
+                    shape = RoundedCornerShape(12.dp)
+                )
+                Button(
+                    onClick = {
+                        if (inputFoodName.isNotBlank()) {
+                            val newId = if (foodList.isEmpty()) 0 else foodList.maxOf { it.id } + 1
+                            foodList.add(
+                                RecognizedFood(
+                                    id = newId,
+                                    name = inputFoodName,
+                                    amount = "1인분"
+                                )
+                            )
+                            editAmounts[newId] = "1인분"
+
+                            val foodNameToSearch = inputFoodName
+                            inputFoodName = ""
+
+                            CoroutineScope(Dispatchers.IO).launch {
+                                val nutritionList = GeminiNutritionService.getNutritionList(listOf(foodNameToSearch))
+                                val nutrition = nutritionList.getOrNull(0)
+                                if (nutrition != null) {
+                                    withContext(Dispatchers.Main) {
+                                        val index = foodList.indexOfFirst { it.id == newId }
+                                        if (index != -1) {
+                                            foodList[index] = foodList[index].copy(
+                                                name    = nutrition.foodName,
+                                                kcal    = nutrition.kcal,
+                                                carbs   = nutrition.carbs,
+                                                protein = nutrition.protein,
+                                                fat     = nutrition.fat
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1A1A1A))
+                ) {
+                    Text("추가", color = Color.White)
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
             if (foodList.isEmpty()) {
-                Box(Modifier.fillMaxWidth().padding(top = 60.dp), Alignment.Center) {
-                    Text("모든 항목이 삭제되었습니다.", fontSize = 15.sp, color = Color(0xFFAAAAAA))
+                Box(Modifier.fillMaxWidth().padding(top = 40.dp), Alignment.Center) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("인식된 음식이 없습니다.", fontSize = 15.sp, color = Color(0xFFAAAAAA))
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text("위에서 음식을 직접 추가해주세요.", fontSize = 13.sp, color = Color(0xFFCCCCCC))
+                    }
                 }
             } else {
                 foodList.toList().forEach { food ->
@@ -721,7 +839,7 @@ fun FoodConfirmScreen(
                             foodList.remove(food)
                             editAmounts.remove(food.id)
                         },
-                        onNameChange = { newName ->  // ← 추가
+                        onNameChange = { newName ->
                             val index = foodList.indexOf(food)
                             if (index != -1) {
                                 foodList[index] = food.copy(name = newName)

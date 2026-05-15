@@ -23,6 +23,15 @@
         android:padding="12dp"
         android:background="@android:drawable/editbox_background" />
 
+    <Button
+        android:id="@+id/btnSearch"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="10dp"
+        android:text="검색"
+        android:backgroundTint="#1A1A1A"
+        android:textColor="#FFFFFF" />
+
     <!-- 마이크 버튼 -->
     <ImageButton
         android:id="@+id/btnMic"

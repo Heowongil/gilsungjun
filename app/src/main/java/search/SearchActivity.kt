@@ -1,4 +1,4 @@
-package search // 폴더 위치가 java/search 라면 이대로 유지
+package search
 
 import com.example.foodanalyzer.R
 import android.Manifest
@@ -8,13 +8,14 @@ import android.os.Bundle
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
+import android.widget.Button
+import android.widget.EditText
 import android.widget.ImageButton
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
-import com.google.ai.client.generativeai.GenerativeModel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -25,6 +26,8 @@ class SearchActivity : AppCompatActivity() {
     private lateinit var speechRecognizer: SpeechRecognizer
     private lateinit var tvResult: TextView
     private lateinit var btnMic: ImageButton
+    private lateinit var btnSearch: Button
+    private lateinit var etFoodInput: EditText
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -32,25 +35,33 @@ class SearchActivity : AppCompatActivity() {
 
         tvResult = findViewById(R.id.tvResult)
         btnMic = findViewById(R.id.btnMic)
+        btnSearch = findViewById(R.id.btnSearch)
+        etFoodInput = findViewById(R.id.etFoodInput)
 
-        // 1. 마이크 권한 체크
         checkPermission()
 
-        // 2. SpeechRecognizer 초기화
         speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this)
 
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
             putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, packageName)
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE, "ko-KR") // 한국어 설정
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE, "ko-KR")
         }
 
-        // 3. 버튼 클릭 시 음성 인식 시작
         btnMic.setOnClickListener {
             speechRecognizer.startListening(intent)
             Toast.makeText(this, "말씀하세요!", Toast.LENGTH_SHORT).show()
         }
 
-        // 4. 결과 처리 리스너
+        btnSearch.setOnClickListener {
+            val inputText = etFoodInput.text.toString().trim()
+            if (inputText.isEmpty()) {
+                Toast.makeText(this, "텍스트를 입력해주세요!", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            tvResult.text = "분석 중..."
+            callGemini(inputText)
+        }
+
         speechRecognizer.setRecognitionListener(object : RecognitionListener {
             override fun onReadyForSpeech(params: Bundle?) {}
             override fun onBeginningOfSpeech() {}
@@ -69,79 +80,87 @@ class SearchActivity : AppCompatActivity() {
             override fun onResults(results: Bundle?) {
                 val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                 if (!matches.isNullOrEmpty()) {
-                    val recognizedText = matches[0] // 사용자가 말한 텍스트
-                    tvResult.text = "인식됨: $recognizedText\n(AI 분석 중...)" // 일단 화면에 띄움
-
-                    // --- 여기서부터 Gemini AI 분석 시작 ---
-
-                    // 1. 발급받은 API 키 넣기 (여기에 아까 메모한 키를 붙여넣으세요!)
-                    // 기존 GenerativeModel 부분 전체를 이걸로 교체
-                    CoroutineScope(Dispatchers.IO).launch {
-                        try {
-                            val prompt = """
-                                너는 식단 분석 전문가야. 다음 문장에서 음식 이름과 수량, 단위만 추출해서 정확히 JSON 배열 형식으로만 대답해줘. 
-                                다른 말은 절대 하지 마.
-                                형식 예시: [{"food": "사과", "amount": 2, "unit": "개"}, {"food": "우유", "amount": 1, "unit": "잔"}]
-            
-                                문장: "$recognizedText"
-                            """.trimIndent()
-
-                            val apiKey = com.example.foodanalyzer.BuildConfig.GEMINI_API_KEY
-                            val url = java.net.URL("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=$apiKey")
-                            val connection = url.openConnection() as java.net.HttpURLConnection
-                            connection.requestMethod = "POST"
-                            connection.setRequestProperty("Content-Type", "application/json")
-                            connection.doOutput = true
-
-                            val body = org.json.JSONObject().apply {
-                                put("contents", org.json.JSONArray().apply {
-                                    put(org.json.JSONObject().apply {
-                                        put("parts", org.json.JSONArray().apply {
-                                            put(org.json.JSONObject().apply {
-                                                put("text", prompt)
-                                            })
-                                        })
-                                    })
-                                })
-
-                            }.toString()
-
-                            connection.outputStream.write(body.toByteArray())
-
-                            val responseCode = connection.responseCode
-                            val response = if (responseCode == 200) {
-                                connection.inputStream.bufferedReader().readText()
-                            } else {
-                                connection.errorStream.bufferedReader().readText()
-                            }
-                            android.util.Log.d("Search", "응답 코드: $responseCode")
-                            android.util.Log.d("Search", "응답: $response")
-
-                            val jsonResponse = org.json.JSONObject(response)
-                            val text = jsonResponse
-                                .getJSONArray("candidates")
-                                .getJSONObject(0)
-                                .getJSONObject("content")
-                                .getJSONArray("parts")
-                                .getJSONObject(0)
-                                .getString("text")
-                                .trim()
-
-                            withContext(Dispatchers.Main) {
-                                tvResult.text = "AI 분석 결과:\n$text"
-                            }
-                        } catch (e: Exception) {
-                            withContext(Dispatchers.Main) {
-                                tvResult.text = "AI 분석 실패: ${e.message}"
-                            }
-                        }
-                    }
+                    val recognizedText = matches[0]
+                    tvResult.text = "인식됨: $recognizedText\n(AI 분석 중...)"
+                    callGemini(recognizedText)
                 }
             }
 
             override fun onPartialResults(partialResults: Bundle?) {}
             override fun onEvent(eventType: Int, params: Bundle?) {}
         })
+    }
+
+    private fun callGemini(inputText: String) {
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val prompt = """
+                    너는 식단 분석 전문가야. 다음 문장에서 음식 이름과 수량, 단위만 추출해서 정확히 JSON 배열 형식으로만 대답해줘. 
+                    다른 말은 절대 하지 마.
+                    형식 예시: [{"food": "사과", "amount": 2, "unit": "개"}, {"food": "우유", "amount": 1, "unit": "잔"}]
+                    
+                    문장: "$inputText"
+                """.trimIndent()
+
+                val apiKey = com.example.foodanalyzer.BuildConfig.GEMINI_API_KEY
+                val url = java.net.URL("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=$apiKey")
+                val connection = url.openConnection() as java.net.HttpURLConnection
+                connection.requestMethod = "POST"
+                connection.setRequestProperty("Content-Type", "application/json")
+                connection.doOutput = true
+
+                val body = org.json.JSONObject().apply {
+                    put("contents", org.json.JSONArray().apply {
+                        put(org.json.JSONObject().apply {
+                            put("parts", org.json.JSONArray().apply {
+                                put(org.json.JSONObject().apply {
+                                    put("text", prompt)
+                                })
+                            })
+                        })
+                    })
+                }.toString()
+
+                connection.outputStream.write(body.toByteArray())
+
+                val responseCode = connection.responseCode
+                val response = if (responseCode == 200) {
+                    connection.inputStream.bufferedReader().readText()
+                } else {
+                    connection.errorStream.bufferedReader().readText()
+                }
+
+                android.util.Log.d("Search", "응답 코드: $responseCode")
+                android.util.Log.d("Search", "응답: $response")
+
+                val jsonResponse = org.json.JSONObject(response)
+                val text = jsonResponse
+                    .getJSONArray("candidates")
+                    .getJSONObject(0)
+                    .getJSONObject("content")
+                    .getJSONArray("parts")
+                    .getJSONObject(0)
+                    .getString("text")
+                    .trim()
+                    .removePrefix("```json")
+                    .removePrefix("```")
+                    .removeSuffix("```")
+                    .trim()
+
+                withContext(Dispatchers.Main) {
+                    tvResult.text = "AI 분석 결과:\n$text"
+
+                    val resultIntent = Intent()
+                    resultIntent.putExtra("food_list_json", text)
+                    setResult(RESULT_OK, resultIntent)
+                    finish()
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    tvResult.text = "AI 분석 실패: ${e.message}"
+                }
+            }
+        }
     }
 
     private fun checkPermission() {
