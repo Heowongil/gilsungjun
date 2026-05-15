@@ -51,6 +51,9 @@ import com.example.foodanalyzer.camera.FoodClassifier
 import com.example.foodanalyzer.data.GeminiNutritionService
 import kotlinx.coroutines.withContext
 import android.widget.Toast
+import androidx.compose.material.icons.filled.Photo
+import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.Edit
 // ───────────────────────────────────────────────
 // 색상
 // ───────────────────────────────────────────────
@@ -293,10 +296,17 @@ fun AnalysisScreen() {
                                 }
                             },
                             onReEdit = {
-                                // 수정 버튼: 사진과 결과 초기화 후 메인으로
-                                photoMap.remove(key)
-                                mealResultMap.remove(key)
-                                // currentStep은 이미 MEAL_LIST이므로 별도 변경 불필요
+                                currentMeal = meal
+                                val existingResult = mealResultMap[key]
+                                if (existingResult != null) {
+                                    // 기존 데이터를 editFoodList에 로드
+                                    editFoodList.clear()
+                                    editFoodList.addAll(existingResult.foods)
+                                    editAmounts.clear()
+                                    existingResult.foods.forEach { editAmounts[it.id] = it.amount }
+                                    // 사진/결과 초기화 없이 바로 CONFIRM으로
+                                    currentStep = AnalysisStep.CONFIRM
+                                }
                             },
                             onBarcodeResult = { food ->
                                 currentMeal = meal
@@ -526,7 +536,7 @@ fun MealCard(
                             .clickable { launcher.launch("image/*") }
                     ) {
                         Icon(
-                            Icons.Default.Add,
+                            Icons.Default.Photo,
                             contentDescription = "갤러리에서 선택",
                             tint = PlusBlueIcon,
                             modifier = Modifier.size(22.dp)
@@ -548,15 +558,16 @@ fun MealCard(
                             }
                     ) {
                         Icon(
-                            Icons.Default.Add,
+                            Icons.Default.CameraAlt,
                             contentDescription = "카메라로 촬영",
                             tint = Color(0xFF4CAF50),
                             modifier = Modifier.size(22.dp)
                         )
                     }
+
                     Spacer(modifier = Modifier.width(8.dp))
 
-// 음성 인식 버튼
+// 텍스트 입력 버튼
                     Box(
                         contentAlignment = Alignment.Center,
                         modifier = Modifier
@@ -564,38 +575,17 @@ fun MealCard(
                             .clip(CircleShape)
                             .background(Color(0xFFFFF3E0))
                             .clickable {
-// 변경
                                 val intent = Intent(context, search.SearchActivity::class.java)
                                 searchLauncher.launch(intent)
                             }
                     ) {
                         Icon(
-                            Icons.Default.Add,
-                            contentDescription = "음성으로 입력",
+                            Icons.Default.Edit,
+                            contentDescription = "텍스트로 입력",
                             tint = Color(0xFFFF9800),
                             modifier = Modifier.size(22.dp)
                         )
                     }
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Box(
-                        contentAlignment = Alignment.Center,
-                        modifier = Modifier
-                            .size(40.dp)
-                            .clip(CircleShape)
-                            .background(Color(0xFFF3E5F5))
-                            .clickable {
-                                val intent = Intent(context, com.example.foodanalyzer.camera.BarcodeScannerActivity::class.java)
-                                barcodeLauncher.launch(intent)
-                            }
-                    ) {
-                        Icon(
-                            Icons.Default.Add,
-                            contentDescription = "바코드 스캔",
-                            tint = Color(0xFF9C27B0),
-                            modifier = Modifier.size(22.dp)
-                        )
-                    }
-
                 }
             }
 
