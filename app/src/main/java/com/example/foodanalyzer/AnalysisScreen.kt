@@ -253,20 +253,41 @@ fun AnalysisScreen() {
 
                                             // Gemini로 영양성분 조회
                                             // Gemini로 영양성분 한 번에 조회
-                                            val foodLabels = results.map { it.label }
-                                            val nutritionList = GeminiNutritionService.getNutritionList(foodLabels)
+                                            val foodLabels = results.map {
+                                                FoodClassifier.labelToKorean[it.label] ?: it.label
+                                            }
 
+// Room DB에서 먼저 검색
+                                            val repo = FoodRepository(context)
                                             val recognizedFoods = results.mapIndexed { index, result ->
-                                                val nutrition = nutritionList.getOrNull(index)
-                                                RecognizedFood(
-                                                    id      = index,
-                                                    name    = nutrition?.foodName ?: result.label,
-                                                    amount  = "1인분",
-                                                    kcal    = nutrition?.kcal ?: 0,
-                                                    carbs   = nutrition?.carbs ?: 0,
-                                                    protein = nutrition?.protein ?: 0,
-                                                    fat     = nutrition?.fat ?: 0
-                                                )
+                                                val koreanName = FoodClassifier.labelToKorean[result.label] ?: result.label
+                                                val dbFood = repo.searchFood(koreanName).firstOrNull()
+
+                                                if (dbFood != null) {
+                                                    // DB에서 찾은 경우
+                                                    RecognizedFood(
+                                                        id      = index,
+                                                        name    = dbFood.name,
+                                                        amount  = "1인분",
+                                                        kcal    = dbFood.calories.toInt(),
+                                                        carbs   = dbFood.carb.toInt(),
+                                                        protein = dbFood.protein.toInt(),
+                                                        fat     = dbFood.fat.toInt()
+                                                    )
+                                                } else {
+                                                    // DB에 없으면 Gemini API 호출
+                                                    val nutritionList = GeminiNutritionService.getNutritionList(listOf(koreanName))
+                                                    val nutrition = nutritionList.getOrNull(0)
+                                                    RecognizedFood(
+                                                        id      = index,
+                                                        name    = nutrition?.foodName ?: koreanName,
+                                                        amount  = "1인분",
+                                                        kcal    = nutrition?.kcal ?: 0,
+                                                        carbs   = nutrition?.carbs ?: 0,
+                                                        protein = nutrition?.protein ?: 0,
+                                                        fat     = nutrition?.fat ?: 0
+                                                    )
+                                                }
                                             }
 
                                             withContext(Dispatchers.Main) {
