@@ -20,4 +20,10 @@ interface DailyLogDao {
     // 기록 삭제
     @Delete
     suspend fun delete(log: DailyLog)
+
+    @Query("SELECT * FROM daily_log")
+    suspend fun getAllLogs(): List<DailyLog>
+
+    @Query("DELETE FROM daily_log")
+    suspend fun deleteAll()
 }

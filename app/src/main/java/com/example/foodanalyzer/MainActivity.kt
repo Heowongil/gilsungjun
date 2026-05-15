@@ -46,6 +46,31 @@ class MainActivity : ComponentActivity() {
         }
 
         AppGoals.load(this)
+        // 앱 시작 시 전체 데이터 로드
+        lifecycleScope.launch {
+            val db = AppDatabase.getInstance(this@MainActivity)
+            val dao = db.dailyLogDao()
+            val allLogs = dao.getAllLogs()
+
+            val grouped = allLogs.groupBy { it.mealType to it.date }
+            grouped.forEach { (key, logList) ->
+                val (mealLabel, date) = key
+                val mealType = MealType.entries.find { it.label == mealLabel } ?: return@forEach
+                val mealKey = "${date}_${mealType.name}"
+                val foods = logList.map { log ->
+                    RecognizedFood(
+                        id = log.foodId,
+                        name = log.foodName,
+                        amount = "${log.weightG.toInt()}g",
+                        kcal = log.calories.toInt(),
+                        carbs = log.carb.toInt(),
+                        protein = log.protein.toInt(),
+                        fat = log.fat.toInt()
+                    )
+                }
+                AppMealData.mealResultMap[mealKey] = MealResult(foods)
+            }
+        }
         AppProfile.load(this)
 
         setContent {
