@@ -149,7 +149,6 @@ class SearchActivity : AppCompatActivity() {
 
                 withContext(Dispatchers.Main) {
                     tvResult.text = "AI 분석 결과:\n$text"
-
                     val resultIntent = Intent()
                     resultIntent.putExtra("food_list_json", text)
                     setResult(RESULT_OK, resultIntent)
