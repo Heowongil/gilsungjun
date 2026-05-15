@@ -25,7 +25,8 @@ import androidx.compose.foundation.Canvas
 import java.time.LocalDate
 import java.time.format.TextStyle
 import java.util.Locale
-
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.runtime.LaunchedEffect
 
 
 // ───────────────────────────────────────────────
@@ -62,6 +63,33 @@ fun HomeScreen() {
 
     var selectedDate by remember { mutableStateOf(today) }
     // AppMealData에서 실제 기록된 데이터 가져오기
+
+    val context = LocalContext.current
+
+    LaunchedEffect(selectedDate) {
+        val db = com.example.foodanalyzer.data.AppDatabase.getInstance(context)
+        val dao = db.dailyLogDao()
+        val logs = dao.getByDate(selectedDate.toString())
+
+        val grouped = logs.groupBy { it.mealType }
+        grouped.forEach { (mealLabel, logList) ->
+            val mealType = MealType.entries.find { it.label == mealLabel } ?: return@forEach
+            val key = "${selectedDate}_${mealType.name}"
+            val foods = logList.map { log ->
+                RecognizedFood(
+                    id = log.foodId,
+                    name = log.foodName,
+                    amount = "${log.weightG.toInt()}g",
+                    kcal = log.calories.toInt(),
+                    carbs = log.carb.toInt(),
+                    protein = log.protein.toInt(),
+                    fat = log.fat.toInt()
+                )
+            }
+            AppMealData.mealResultMap[key] = MealResult(foods)
+        }
+    }
+
     val nutrition = AppMealData.getDayNutrition(selectedDate.toString())
 
     Box(

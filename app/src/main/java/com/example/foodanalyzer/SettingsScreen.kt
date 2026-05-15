@@ -30,7 +30,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-
+import androidx.compose.ui.platform.LocalContext
 // ───────────────────────────────────────────────
 // 색상
 // ───────────────────────────────────────────────
@@ -40,14 +40,16 @@ val CardWhite    = Color(0xFFFFFFFF)
 val DividerGray  = Color(0xFFF0F0F0)
 val LogoutRed    = Color(0xFFE57373)
 
+
+
 // ───────────────────────────────────────────────
 // 사용자 프로필 데이터 모델
 // ───────────────────────────────────────────────
 data class UserProfile(
-    val nickname: String = "고순이에요",
-    val height: String   = "190.0",
-    val weight: String   = "88.0",
-    val age: String      = "23",
+    val nickname: String = "사용자",
+    val height: String   = "170.0",
+    val weight: String   = "65.0",
+    val age: String      = "25",
     val gender: String   = "남성"
 )
 
@@ -61,6 +63,7 @@ enum class SettingsStep { MAIN, EDIT_PROFILE }
 // ───────────────────────────────────────────────
 @Composable
 fun SettingsScreen() {
+    val context = LocalContext.current
     var step         by remember { mutableStateOf(SettingsStep.MAIN) }
     var profile by remember {
         mutableStateOf(
@@ -96,6 +99,8 @@ fun SettingsScreen() {
                     AppProfile.weight   = updated.weight
                     AppProfile.age      = updated.age
                     AppProfile.gender   = updated.gender
+                    AppGoals.save(context)      // ← 추가
+                    AppProfile.save(context)
                     step = SettingsStep.MAIN
                 }
             )

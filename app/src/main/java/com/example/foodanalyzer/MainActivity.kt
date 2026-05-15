@@ -41,6 +41,9 @@ class MainActivity : ComponentActivity() {
             DatabaseInitializer.initializeIfNeeded(this@MainActivity, database)
         }
 
+        AppGoals.load(this)
+        AppProfile.load(this)
+
         setContent {
             FoodAnalyzerTheme {
                 MainScreen()
