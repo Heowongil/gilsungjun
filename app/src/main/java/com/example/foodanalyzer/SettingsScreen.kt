@@ -556,12 +556,11 @@ fun ProfileEditScreen(
                     HorizontalDivider(color = DividerGray, thickness = 1.dp)
                     NutrientGoalField(label = "목표 칼로리",   value = targetKcal,    unit = "kcal", onValueChange = { targetKcal = it })
                     HorizontalDivider(color = DividerGray, thickness = 1.dp)
-                    NutrientGoalField(label = "목표 탄수화물", value = targetCarbs,   unit = "g",    onValueChange = { targetCarbs = it })
+                    NutrientGoalField(label = "목표 탄수화물", value = targetCarbs,   unit = "g", recommended = "${(recommendedKcal * 0.5 / 4).toInt()}g",  onValueChange = { targetCarbs = it })
                     HorizontalDivider(color = DividerGray, thickness = 1.dp)
-                    NutrientGoalField(label = "목표 단백질",   value = targetProtein, unit = "g",    onValueChange = { targetProtein = it })
+                    NutrientGoalField(label = "목표 단백질",   value = targetProtein, unit = "g", recommended = "${(recommendedKcal * 0.25 / 4).toInt()}g", onValueChange = { targetProtein = it })
                     HorizontalDivider(color = DividerGray, thickness = 1.dp)
-                    NutrientGoalField(label = "목표 지방",     value = targetFat,     unit = "g",    onValueChange = { targetFat = it })
-                }
+                    NutrientGoalField(label = "목표 지방",     value = targetFat,     unit = "g", recommended = "${(recommendedKcal * 0.25 / 9).toInt()}g", onValueChange = { targetFat = it }) }
             }
             Spacer(modifier = Modifier.height(16.dp))
         }
@@ -569,9 +568,16 @@ fun ProfileEditScreen(
 }
 
 @Composable
-fun NutrientGoalField(label: String, value: String, unit: String, onValueChange: (String) -> Unit) {
+fun NutrientGoalField(label: String, value: String, unit: String, recommended: String = "", onValueChange: (String) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(label, fontSize = 13.sp, color = Color(0xFFAAAAAA))
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+            Text(label, fontSize = 13.sp, color = Color(0xFFAAAAAA))
+            if (recommended.isNotEmpty()) {
+                Box(modifier = Modifier.clip(RoundedCornerShape(20.dp)).background(Color(0xFFD6F0D6)).padding(horizontal = 10.dp, vertical = 4.dp)) {
+                    Text("권장 $recommended", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF4CAF50))
+                }
+            }
+        }
         Row(modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(Color(0xFFF5F5F5)).padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
             BasicEditText(value = value, onValueChange = onValueChange, keyboardType = KeyboardType.Number, modifier = Modifier.weight(1f))
             Text(unit, fontSize = 13.sp, color = Color(0xFFAAAAAA))

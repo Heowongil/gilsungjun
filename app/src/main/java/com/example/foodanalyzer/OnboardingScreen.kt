@@ -313,12 +313,11 @@ fun OnboardingScreen(onComplete: () -> Unit) {
                         ) {
                             OnboardingNutrientField("목표 칼로리", targetKcal, "kcal") { targetKcal = it }
                             HorizontalDivider(color = Color(0xFFF0F0F0))
-                            OnboardingNutrientField("목표 탄수화물", targetCarbs, "g") { targetCarbs = it }
+                            OnboardingNutrientField("목표 탄수화물", targetCarbs, "g", "${(recommendedKcal * 0.5 / 4).toInt()}g") { targetCarbs = it }
                             HorizontalDivider(color = Color(0xFFF0F0F0))
-                            OnboardingNutrientField("목표 단백질", targetProtein, "g") { targetProtein = it }
+                            OnboardingNutrientField("목표 단백질", targetProtein, "g", "${(recommendedKcal * 0.25 / 4).toInt()}g") { targetProtein = it }
                             HorizontalDivider(color = Color(0xFFF0F0F0))
-                            OnboardingNutrientField("목표 지방", targetFat, "g") { targetFat = it }
-                        }
+                            OnboardingNutrientField("목표 지방", targetFat, "g", "${(recommendedKcal * 0.25 / 9).toInt()}g") { targetFat = it } }
                     }
                 }
             }
@@ -379,6 +378,7 @@ fun OnboardingNutrientField(
     label: String,
     value: String,
     unit: String,
+    recommended: String = "",
     onValueChange: (String) -> Unit
 ) {
     Row(
@@ -386,7 +386,12 @@ fun OnboardingNutrientField(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        Text(label, fontSize = 14.sp, color = Color(0xFF666666))
+        Column {
+            Text(label, fontSize = 14.sp, color = Color(0xFF666666))
+            if (recommended.isNotEmpty()) {
+                Text("권장 $recommended", fontSize = 11.sp, color = Color(0xFF4CAF50), fontWeight = FontWeight.SemiBold)
+            }
+        }
         OutlinedTextField(
             value = value,
             onValueChange = onValueChange,

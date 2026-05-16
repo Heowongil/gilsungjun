@@ -27,7 +27,13 @@ import java.time.format.TextStyle
 import java.util.Locale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.runtime.LaunchedEffect
-
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.HorizontalDivider
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 // ───────────────────────────────────────────────
 // 목표값 (추후 설정 화면에서 변경 가능하도록 확장)
@@ -131,6 +137,9 @@ fun HomeScreen() {
             NutrientRow(nutrition = nutrition)
 
             Spacer(modifier = Modifier.height(32.dp))
+            SectionTitle("먹으면 어떻게 될까?")
+            Spacer(modifier = Modifier.height(16.dp))
+            FoodPreviewCard(currentNutrition = nutrition)
         }
 
         // ── FAB (+) 버튼 ──
@@ -376,6 +385,105 @@ fun NutrientCircle(
             fontSize = 12.sp,
             color = TextGray
         )
+    }
+}
+
+
+@Composable
+fun FoodPreviewCard(currentNutrition: DayNutrition) {
+    val context = LocalContext.current
+    var inputText by remember { mutableStateOf("") }
+    var gramsText by remember { mutableStateOf("") }
+    var previewFood by remember { mutableStateOf<RecognizedFood?>(null) }
+    Card(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        elevation = CardDefaults.cardElevation(2.dp)
+    ) {
+        Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text("음식 이름을 입력하면 섭취 후 예상 영양소를 보여줄게요", fontSize = 13.sp, color = TextGray)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                androidx.compose.foundation.text.BasicTextField(
+                    value = inputText,
+                    onValueChange = { inputText = it },
+                    textStyle = androidx.compose.ui.text.TextStyle(fontSize = 15.sp, color = TextDark),
+                    modifier = Modifier.weight(1f).clip(RoundedCornerShape(10.dp)).background(Color(0xFFF5F5F5)).padding(horizontal = 14.dp, vertical = 12.dp),
+                    singleLine = true,
+                    decorationBox = { inner ->
+                        if (inputText.isEmpty()) Text("예: 삼겹살", fontSize = 15.sp, color = Color(0xFFAAAAAA))
+                        inner()
+                    }
+                )
+                androidx.compose.foundation.text.BasicTextField(
+                    value = gramsText,
+                    onValueChange = { gramsText = it },
+                    textStyle = androidx.compose.ui.text.TextStyle(fontSize = 15.sp, color = TextDark),
+                    modifier = Modifier.width(70.dp).clip(RoundedCornerShape(10.dp)).background(Color(0xFFF5F5F5)).padding(horizontal = 10.dp, vertical = 12.dp),
+                    singleLine = true,
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
+                    decorationBox = { inner ->
+                        if (gramsText.isEmpty()) Text("g", fontSize = 15.sp, color = Color(0xFFAAAAAA))
+                        inner()
+                    }
+                )
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier.clip(RoundedCornerShape(10.dp)).background(Color(0xFF1A1A1A)).clickable {
+                        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                            val repo = com.example.foodanalyzer.data.FoodRepository(context)
+                            val results = repo.searchFood(inputText.trim())
+                            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                                if (results.isNotEmpty()) {
+                                    val food = foodFromDb(results[0].id, results[0])
+                                    val customGrams = gramsText.toIntOrNull()
+                                    previewFood = if (customGrams != null && customGrams > 0) {
+                                        val ratio = customGrams.toFloat() / (results[0].avgWeightG)
+                                        food.copy(
+                                            amount = "${customGrams}g",
+                                            kcal = (food.kcal * ratio).toInt(),
+                                            carbs = (food.carbs * ratio).toInt(),
+                                            protein = (food.protein * ratio).toInt(),
+                                            fat = (food.fat * ratio).toInt()
+                                        )
+                                    } else food
+                                }
+                            }
+                        }
+                    }.padding(horizontal = 16.dp, vertical = 12.dp)
+                ) {
+                    Text("확인", fontSize = 14.sp, color = Color.White, fontWeight = FontWeight.Bold)
+                }
+            }
+
+            previewFood?.let { food ->
+                HorizontalDivider(color = Color(0xFFF0F0F0))
+                Text("${food.name} (${food.amount}) 추가 시", fontSize = 13.sp, color = TextGray)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    PreviewNutrientTag("칼로리", currentNutrition.calories, food.kcal, AppGoals.calories, "kcal", CalorieBlue)
+                    PreviewNutrientTag("탄수화물", currentNutrition.carbs, food.carbs, AppGoals.carbs, "g", CarbGreen)
+                    PreviewNutrientTag("단백질", currentNutrition.protein, food.protein, AppGoals.protein, "g", ProteinBlue)
+                    PreviewNutrientTag("지방", currentNutrition.fat, food.fat, AppGoals.fat, "g", FatOrange)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun PreviewNutrientTag(label: String, current: Int, add: Int, goal: Int, unit: String, color: Color) {
+    val after = current + add
+    val isOver = after > goal
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier.clip(RoundedCornerShape(12.dp)).background(if (isOver) Color(0xFFFFE0E0) else Color(0xFFE8F5E9)).padding(horizontal = 8.dp, vertical = 6.dp)
+        ) {
+            Text("$after$unit", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = if (isOver) Color(0xFFE57373) else color)
+        }
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(label, fontSize = 11.sp, color = TextGray)
+        Text(if (isOver) "초과!" else "+$add$unit", fontSize = 11.sp, color = if (isOver) Color(0xFFE57373) else color)
     }
 }
 

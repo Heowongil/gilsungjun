@@ -103,15 +103,14 @@ class SearchActivity : AppCompatActivity() {
     }
 
     private fun searchFood(inputText: String) {
-        val isSimpleFoodName = inputText.length <= 10 &&
-                !inputText.contains(Regex("[0-9]")) &&
-                !inputText.contains(Regex("먹|마셨|했|개|잔|그릇|인분|조각|판|봉지"))
-
+        val foodName = inputText.replace("1인분", "").replace("한 인분", "").trim()
+        val isSimpleFoodName = foodName.length <= 10 &&
+                !foodName.contains(Regex("[0-9]")) &&
+                !foodName.contains(Regex("먹|마셨|했|개|잔|그릇|조각|판|봉지"))
         if (isSimpleFoodName) {
             CoroutineScope(Dispatchers.IO).launch {
                 val repo = com.example.foodanalyzer.data.FoodRepository(this@SearchActivity)
-                val results = repo.searchFood(inputText)
-
+                val results = repo.searchFood(foodName)  // inputText 였던 부분
                 withContext(Dispatchers.Main) {
                     if (results.isNotEmpty()) {
                         val jsonArray = org.json.JSONArray()

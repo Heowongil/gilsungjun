@@ -32,12 +32,6 @@
             android:background="@android:drawable/editbox_background" />
 
         <!-- 텍스트 검색 버튼 추가 -->
-        <Button
-            android:id="@+id/btnTextSubmit"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="8dp"
-            android:text="검색" />
     </LinearLayout>
 
     <Button
