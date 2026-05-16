@@ -31,12 +31,12 @@ object GeminiNutritionService {
 
                 val foodList = foodNames.joinToString(", ")
                 val prompt = """
-                    너는 영양성분 전문가야. 아래 음식들의 1인분 기준 영양성분을 JSON 배열 형식으로만 대답해줘.
-                    다른 말은 절대 하지 마. JSON 배열만 출력해.
-                    음식을 모르더라도 비슷한 음식 기준으로 추정해서 반드시 값을 채워줘.
-                    형식: [{"foodName": "한글음식명", "kcal": 숫자, "carbs": 숫자, "protein": 숫자, "fat": 숫자}, ...]
-                    음식 목록: $foodList
-                """.trimIndent()
+    너는 영양성분 전문가야. 아래 음식들의 100g 기준 영양성분을 JSON 배열 형식으로만 대답해줘.
+    다른 말은 절대 하지 마. JSON 배열만 출력해.
+    모든 숫자는 반드시 0보다 큰 정수로 입력해. 0은 절대 사용하지 마.
+    형식: [{"foodName": "한글음식명", "kcal": 숫자, "carbs": 숫자, "protein": 숫자, "fat": 숫자}, ...]
+    음식 목록: $foodList
+""".trimIndent()
 
                 val body = JSONObject().apply {
                     put("contents", JSONArray().apply {

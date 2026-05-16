@@ -237,7 +237,11 @@ fun AnalysisScreen() {
                                                         kcal    = nutrition?.kcal ?: 0,
                                                         carbs   = nutrition?.carbs ?: 0,
                                                         protein = nutrition?.protein ?: 0,
-                                                        fat     = nutrition?.fat ?: 0
+                                                        fat     = nutrition?.fat ?: 0,
+                                                        kcalPer100g    = nutrition?.kcal?.toDouble() ?: 0.0,    // ← 추가
+                                                        carbsPer100g   = nutrition?.carbs?.toDouble() ?: 0.0,   // ← 추가
+                                                        proteinPer100g = nutrition?.protein?.toDouble() ?: 0.0, // ← 추가
+                                                        fatPer100g     = nutrition?.fat?.toDouble() ?: 0.0      // ← 추가
                                                     )
                                                 }
                                             }
@@ -315,8 +319,13 @@ fun AnalysisScreen() {
                                                 kcal    = nutrition?.kcal ?: 0,
                                                 carbs   = nutrition?.carbs ?: 0,
                                                 protein = nutrition?.protein ?: 0,
-                                                fat     = nutrition?.fat ?: 0
+                                                fat     = nutrition?.fat ?: 0,
+                                                kcalPer100g    = nutrition?.kcal?.toDouble() ?: 0.0,    // ← 추가
+                                                carbsPer100g   = nutrition?.carbs?.toDouble() ?: 0.0,   // ← 추가
+                                                proteinPer100g = nutrition?.protein?.toDouble() ?: 0.0, // ← 추가
+                                                fatPer100g     = nutrition?.fat?.toDouble() ?: 0.0      // ← 추가
                                             )
+
                                         }
                                     }
                                     withContext(Dispatchers.Main) {
@@ -706,7 +715,11 @@ fun FoodConfirmScreen(
                                 kcal    = nutrition?.kcal ?: 0,
                                 carbs   = nutrition?.carbs ?: 0,
                                 protein = nutrition?.protein ?: 0,
-                                fat     = nutrition?.fat ?: 0
+                                fat     = nutrition?.fat ?: 0,
+                                kcalPer100g    = nutrition?.kcal?.toDouble() ?: 0.0,    // ← 추가
+                                carbsPer100g   = nutrition?.carbs?.toDouble() ?: 0.0,   // ← 추가
+                                proteinPer100g = nutrition?.protein?.toDouble() ?: 0.0, // ← 추가
+                                fatPer100g     = nutrition?.fat?.toDouble() ?: 0.0      // ← 추가
                             )
                         }
                     }
@@ -762,7 +775,11 @@ fun FoodConfirmScreen(
                                     kcal    = nutrition?.kcal ?: 0,
                                     carbs   = nutrition?.carbs ?: 0,
                                     protein = nutrition?.protein ?: 0,
-                                    fat     = nutrition?.fat ?: 0
+                                    fat     = nutrition?.fat ?: 0,
+                                    kcalPer100g    = nutrition?.kcal?.toDouble() ?: 0.0,    // ← 추가
+                                    carbsPer100g   = nutrition?.carbs?.toDouble() ?: 0.0,   // ← 추가
+                                    proteinPer100g = nutrition?.protein?.toDouble() ?: 0.0, // ← 추가
+                                    fatPer100g     = nutrition?.fat?.toDouble() ?: 0.0      // ← 추가
                                 )
                             }
                         }
@@ -819,7 +836,11 @@ fun FoodConfirmScreen(
                                 kcal    = nutrition?.kcal ?: 0,
                                 carbs   = nutrition?.carbs ?: 0,
                                 protein = nutrition?.protein ?: 0,
-                                fat     = nutrition?.fat ?: 0
+                                fat     = nutrition?.fat ?: 0,
+                                kcalPer100g    = nutrition?.kcal?.toDouble() ?: 0.0,    // ← 추가
+                                carbsPer100g   = nutrition?.carbs?.toDouble() ?: 0.0,   // ← 추가
+                                proteinPer100g = nutrition?.protein?.toDouble() ?: 0.0, // ← 추가
+                                fatPer100g     = nutrition?.fat?.toDouble() ?: 0.0      // ← 추가
                             )
                         }
                     }
@@ -966,6 +987,7 @@ fun FoodConfirmScreen(
                                                 protein = (dbFood.protein * dbFood.avgWeightG / 100).toInt(),
                                                 fat     = (dbFood.fat * dbFood.avgWeightG / 100).toInt()
                                             )
+                                            foodList[index] = foodFromDb(newId, dbFood)
                                             editAmounts[newId] = "${dbFood.avgWeightG.toInt()}g"
                                         } else {
                                             val nutritionList = GeminiNutritionService.getNutritionList(listOf(foodNameToSearch))
@@ -976,7 +998,25 @@ fun FoodConfirmScreen(
                                                     kcal    = nutrition.kcal,
                                                     carbs   = nutrition.carbs,
                                                     protein = nutrition.protein,
-                                                    fat     = nutrition.fat
+                                                    fat     = nutrition.fat,
+                                                    kcalPer100g    = nutrition?.kcal?.toDouble() ?: 0.0,    // ← 추가
+                                                    carbsPer100g   = nutrition?.carbs?.toDouble() ?: 0.0,   // ← 추가
+                                                    proteinPer100g = nutrition?.protein?.toDouble() ?: 0.0, // ← 추가
+                                                    fatPer100g     = nutrition?.fat?.toDouble() ?: 0.0      // ← 추가
+                                                )
+                                            }
+                                            if (nutrition != null) {
+                                                android.util.Log.d("FoodItem", "Gemini 결과 - kcal: ${nutrition.kcal}, foodName: ${nutrition.foodName}")
+                                                foodList[index] = foodList[index].copy(
+                                                    name           = nutrition.foodName,
+                                                    kcal           = nutrition.kcal,
+                                                    carbs          = nutrition.carbs,
+                                                    protein        = nutrition.protein,
+                                                    fat            = nutrition.fat,
+                                                    kcalPer100g    = nutrition.kcal.toDouble(),
+                                                    carbsPer100g   = nutrition.carbs.toDouble(),
+                                                    proteinPer100g = nutrition.protein.toDouble(),
+                                                    fatPer100g     = nutrition.fat.toDouble()
                                                 )
                                             }
                                         }
@@ -1004,9 +1044,9 @@ fun FoodConfirmScreen(
                 }
             } else {
                 foodList.toList().forEach { food ->
-                    val currentFoodState = remember(food.id, food.kcal, food.carbs, food.protein, food.fat, food.amount) { food }
+
                     FoodItemCard(
-                        food           = currentFoodState,
+                        food           = food,
                         currentAmount  = editAmounts[food.id] ?: food.amount,
                         onAmountChange = { editAmounts[food.id] = it },
                         onDelete       = {
@@ -1034,7 +1074,23 @@ fun FoodConfirmScreen(
             if (foodList.isNotEmpty()) {
                 Button(
                     onClick = {
-                        onConfirm(foodList.map { it.copy(amount = editAmounts[it.id] ?: it.amount) })
+                        // editAmounts의 최신 양으로 foodList 업데이트 후 confirm
+                        val finalFoods = foodList.map { food ->
+                            val amount = editAmounts[food.id] ?: food.amount
+                            if (food.kcalPer100g > 0) {
+                                val grams = amount.replace("g", "").toDoubleOrNull()
+                                if (grams != null) {
+                                    food.copy(
+                                        amount  = amount,
+                                        kcal    = (food.kcalPer100g * grams / 100).toInt(),
+                                        carbs   = (food.carbsPer100g * grams / 100).toInt(),
+                                        protein = (food.proteinPer100g * grams / 100).toInt(),
+                                        fat     = (food.fatPer100g * grams / 100).toInt()
+                                    )
+                                } else food.copy(amount = amount)
+                            } else food.copy(amount = amount)
+                        }
+                        onConfirm(finalFoods)
                     },
                     modifier = Modifier.fillMaxWidth().height(52.dp),
                     shape = RoundedCornerShape(14.dp),
@@ -1062,8 +1118,10 @@ fun FoodItemCard(
     var tempAmount      by remember(currentAmount) { mutableStateOf(currentAmount) }
     var tempName        by remember(food.name) { mutableStateOf(food.name) }
     val focusManager    = LocalFocusManager.current
-    // 영양소 표시 - 실시간 계산
-    val displayGrams = currentAmount.replace("g", "").toDoubleOrNull()
+
+    // 실시간 칼로리 계산
+    val displayGrams = tempAmount.replace("g", "").toDoubleOrNull()
+    android.util.Log.d("FoodItem", "displayGrams: $displayGrams, kcalPer100g: ${food.kcalPer100g}")
     val displayKcal = if (food.kcalPer100g > 0 && displayGrams != null)
         (food.kcalPer100g * displayGrams / 100).toInt() else food.kcal
     val displayCarbs = if (food.carbsPer100g > 0 && displayGrams != null)
@@ -1072,39 +1130,6 @@ fun FoodItemCard(
         (food.proteinPer100g * displayGrams / 100).toInt() else food.protein
     val displayFat = if (food.fatPer100g > 0 && displayGrams != null)
         (food.fatPer100g * displayGrams / 100).toInt() else food.fat
-
-    if (displayKcal > 0) {
-        Spacer(modifier = Modifier.height(8.dp))
-        HorizontalDivider(color = Color(0xFFF0F0F0), thickness = 1.dp)
-        Spacer(modifier = Modifier.height(8.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("${displayKcal}kcal", fontSize = 13.sp, color = Color(0xFF4CAF50), fontWeight = FontWeight.Medium)
-            Text("탄 ${displayCarbs}g", fontSize = 13.sp, color = Color(0xFF888888))
-            Text("단 ${displayProtein}g", fontSize = 13.sp, color = Color(0xFF888888))
-            Text("지 ${displayFat}g", fontSize = 13.sp, color = Color(0xFF888888))
-        }
-    }
-
-    fun confirmAmount() {
-        onAmountChange(tempAmount)
-        isEditingAmount = false
-        focusManager.clearFocus()
-        // 재계산
-        if (food.kcalPer100g > 0) {
-            val grams = tempAmount.replace("g", "").toDoubleOrNull()
-            if (grams != null) {
-                onNutritionRecalculate(
-                    food.copy(
-                        amount  = tempAmount,
-                        kcal    = (food.kcalPer100g * grams / 100).toInt(),
-                        carbs   = (food.carbsPer100g * grams / 100).toInt(),
-                        protein = (food.proteinPer100g * grams / 100).toInt(),
-                        fat     = (food.fatPer100g * grams / 100).toInt()
-                    )
-                )
-            }
-        }
-    }
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -1123,8 +1148,11 @@ fun FoodItemCard(
                     Spacer(modifier = Modifier.height(2.dp))
                     if (isEditingName) {
                         BasicTextField(
-                            value = tempName,
-                            onValueChange = { tempName = it },
+                            value = tempAmount,
+                            onValueChange = {
+                                tempAmount = it
+                                android.util.Log.d("FoodItem", "tempAmount changed: $it")
+                            },
                             textStyle = TextStyle(fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Color(0xFF1A1A1A)),
                             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                             keyboardActions = KeyboardActions(onDone = {
@@ -1138,8 +1166,7 @@ fun FoodItemCard(
                                 .padding(horizontal = 12.dp, vertical = 8.dp)
                         )
                         Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            "✓ 확인", fontSize = 13.sp, color = Color(0xFF4CAF50),
+                        Text("✓ 확인", fontSize = 13.sp, color = Color(0xFF4CAF50),
                             fontWeight = FontWeight.SemiBold,
                             modifier = Modifier.clickable {
                                 onNameChange(tempName)
@@ -1148,17 +1175,11 @@ fun FoodItemCard(
                             }
                         )
                     } else {
-                        Text(
-                            text = food.name,
-                            fontSize = 17.sp,
-                            fontWeight = FontWeight.Bold,
+                        Text(text = food.name, fontSize = 17.sp, fontWeight = FontWeight.Bold,
                             color = Color(0xFF1A1A1A),
                             modifier = Modifier.clickable { isEditingName = true }
                         )
-                        Text(
-                            "✏ 이름 수정",
-                            fontSize = 11.sp,
-                            color = Color(0xFFAAAAAA),
+                        Text("✏ 이름 수정", fontSize = 11.sp, color = Color(0xFFAAAAAA),
                             modifier = Modifier.clickable { isEditingName = true }
                         )
                     }
@@ -1179,39 +1200,58 @@ fun FoodItemCard(
                         onValueChange = { tempAmount = it },
                         textStyle = TextStyle(fontSize = 15.sp, color = Color(0xFF1A1A1A)),
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                        keyboardActions = KeyboardActions(onDone = { confirmAmount() }),
+                        keyboardActions = KeyboardActions(onDone = {
+                            isEditingAmount = false
+                            focusManager.clearFocus()
+                            onAmountChange(tempAmount)
+                            onNutritionRecalculate(food.copy(
+                                amount  = tempAmount,
+                                kcal    = displayKcal,
+                                carbs   = displayCarbs,
+                                protein = displayProtein,
+                                fat     = displayFat
+                            ))
+                        }),
                         modifier = Modifier
                             .fillMaxWidth()
                             .border(1.5.dp, Color(0xFF5B9BD5), RoundedCornerShape(8.dp))
                             .padding(horizontal = 12.dp, vertical = 10.dp)
                     )
                     Spacer(modifier = Modifier.height(6.dp))
-                    Text(
-                        "✓ 확인", fontSize = 13.sp, color = Color(0xFF4CAF50),
+                    Text("✓ 확인", fontSize = 13.sp, color = Color(0xFF4CAF50),
                         fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier.clickable { confirmAmount() }
+                        modifier = Modifier.clickable {
+                            isEditingAmount = false
+                            focusManager.clearFocus()
+                            onAmountChange(tempAmount)
+                            onNutritionRecalculate(food.copy(
+                                amount  = tempAmount,
+                                kcal    = displayKcal,
+                                carbs   = displayCarbs,
+                                protein = displayProtein,
+                                fat     = displayFat
+                            ))
+                        }
                     )
                 } else {
                     Text(
                         text = currentAmount,
                         fontSize = 15.sp, color = Color(0xFF444444),
-                        modifier = Modifier
-                            .clickable { isEditingAmount = true }
-                            .padding(vertical = 2.dp)
+                        modifier = Modifier.clickable { isEditingAmount = true }.padding(vertical = 2.dp)
                     )
                 }
             }
 
             // 영양소 표시
-            if (food.kcal > 0) {
+            if (displayKcal > 0) {
                 Spacer(modifier = Modifier.height(8.dp))
                 HorizontalDivider(color = Color(0xFFF0F0F0), thickness = 1.dp)
                 Spacer(modifier = Modifier.height(8.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("${food.kcal}kcal", fontSize = 13.sp, color = Color(0xFF4CAF50), fontWeight = FontWeight.Medium)
-                    Text("탄 ${food.carbs}g", fontSize = 13.sp, color = Color(0xFF888888))
-                    Text("단 ${food.protein}g", fontSize = 13.sp, color = Color(0xFF888888))
-                    Text("지 ${food.fat}g", fontSize = 13.sp, color = Color(0xFF888888))
+                    Text("${displayKcal}kcal", fontSize = 13.sp, color = Color(0xFF4CAF50), fontWeight = FontWeight.Medium)
+                    Text("탄 ${displayCarbs}g", fontSize = 13.sp, color = Color(0xFF888888))
+                    Text("단 ${displayProtein}g", fontSize = 13.sp, color = Color(0xFF888888))
+                    Text("지 ${displayFat}g", fontSize = 13.sp, color = Color(0xFF888888))
                 }
             }
         }
