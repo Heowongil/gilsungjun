@@ -131,12 +131,14 @@ class SearchActivity : AppCompatActivity() {
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 val prompt = """
-                    너는 식단 분석 전문가야. 다음 문장에서 음식 이름과 수량, 단위만 추출해서 정확히 JSON 배열 형식으로만 대답해줘. 
-                    다른 말은 절대 하지 마.
-                    형식 예시: [{"food": "사과", "amount": 2, "unit": "개"}, {"food": "우유", "amount": 1, "unit": "잔"}]
-                    
-                    문장: "$inputText"
-                """.trimIndent()
+        너는 식단 분석 전문가야. 다음 문장에서 음식 이름과 수량을 추출해서 g 단위로 변환해서 JSON 배열 형식으로만 대답해줘.
+        다른 말은 절대 하지 마.
+        개, 조각, 인분, 그릇 등의 단위는 일반적인 1인분 중량(g)으로 변환해줘.
+        예시: 바나나 2개 → 240g, 피자 2조각 → 240g, 밥 1공기 → 200g
+        형식: [{"food": "음식명", "amount": 숫자, "unit": "g"}]
+    
+        문장: "$inputText"
+""".trimIndent()
 
                 val apiKey = com.example.foodanalyzer.BuildConfig.GEMINI_API_KEY
                 val url = java.net.URL("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=$apiKey")

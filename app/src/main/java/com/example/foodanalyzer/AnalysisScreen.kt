@@ -90,18 +90,23 @@ data class MealResult(
 )
 
 fun Food.toRecognizedFood(amount: String = "1인분"): RecognizedFood {
+    val kcalPer100g = if (avgWeightG > 0) calories / avgWeightG * 100 else calories
+    val carbsPer100g = if (avgWeightG > 0) carb / avgWeightG * 100 else carb
+    val proteinPer100g = if (avgWeightG > 0) protein / avgWeightG * 100 else protein
+    val fatPer100g = if (avgWeightG > 0) fat / avgWeightG * 100 else fat
+
     return RecognizedFood(
-        id              = this.id,
-        name            = this.name,
-        amount          = "${this.avgWeightG.toInt()}g",
-        kcal            = (this.calories * this.avgWeightG / 100).toInt(),
-        carbs           = (this.carb * this.avgWeightG / 100).toInt(),
-        protein         = (this.protein * this.avgWeightG / 100).toInt(),
-        fat             = (this.fat * this.avgWeightG / 100).toInt(),
-        kcalPer100g     = this.calories,
-        carbsPer100g    = this.carb,
-        proteinPer100g  = this.protein,
-        fatPer100g      = this.fat
+        id             = this.id,
+        name           = this.name,
+        amount         = "${this.avgWeightG.toInt()}g",
+        kcal           = this.calories.toInt(),
+        carbs          = this.carb.toInt(),
+        protein        = this.protein.toInt(),
+        fat            = this.fat.toInt(),
+        kcalPer100g    = kcalPer100g,
+        carbsPer100g   = carbsPer100g,
+        proteinPer100g = proteinPer100g,
+        fatPer100g     = fatPer100g
     )
 }
 
@@ -110,18 +115,25 @@ fun getFakeAiResult(): List<RecognizedFood> = listOf(
     RecognizedFood(2, "김치", "50g", 15, 2, 1, 0)
 )
 fun foodFromDb(id: Int, dbFood: Food): RecognizedFood {
+    // CSV 데이터는 이미 1인분 기준이므로 그대로 사용
+    // kcalPer100g은 역산: 1인분칼로리 / avgWeightG * 100
+    val kcalPer100g = if (dbFood.avgWeightG > 0) dbFood.calories / dbFood.avgWeightG * 100 else dbFood.calories
+    val carbsPer100g = if (dbFood.avgWeightG > 0) dbFood.carb / dbFood.avgWeightG * 100 else dbFood.carb
+    val proteinPer100g = if (dbFood.avgWeightG > 0) dbFood.protein / dbFood.avgWeightG * 100 else dbFood.protein
+    val fatPer100g = if (dbFood.avgWeightG > 0) dbFood.fat / dbFood.avgWeightG * 100 else dbFood.fat
+
     return RecognizedFood(
         id             = id,
         name           = dbFood.name,
         amount         = "${dbFood.avgWeightG.toInt()}g",
-        kcal           = (dbFood.calories * dbFood.avgWeightG / 100).toInt(),
-        carbs          = (dbFood.carb * dbFood.avgWeightG / 100).toInt(),
-        protein        = (dbFood.protein * dbFood.avgWeightG / 100).toInt(),
-        fat            = (dbFood.fat * dbFood.avgWeightG / 100).toInt(),
-        kcalPer100g    = dbFood.calories,
-        carbsPer100g   = dbFood.carb,
-        proteinPer100g = dbFood.protein,
-        fatPer100g     = dbFood.fat
+        kcal           = dbFood.calories.toInt(),       // ← 그대로
+        carbs          = dbFood.carb.toInt(),            // ← 그대로
+        protein        = dbFood.protein.toInt(),         // ← 그대로
+        fat            = dbFood.fat.toInt(),             // ← 그대로
+        kcalPer100g    = kcalPer100g,
+        carbsPer100g   = carbsPer100g,
+        proteinPer100g = proteinPer100g,
+        fatPer100g     = fatPer100g
     )
 }
 enum class AnalysisStep { MEAL_LIST, CONFIRM, RESULT }
@@ -224,7 +236,7 @@ fun AnalysisScreen() {
                                             val recognizedFoods = results.mapIndexed { index, result ->
                                                 val koreanName = FoodClassifier.labelToKorean[result.label] ?: result.label
                                                 val dbFood = repo.searchFood(koreanName).firstOrNull()
-
+                                                android.util.Log.d("FoodItem", "DB 검색어: ${koreanName}, DB결과: ${dbFood?.name}")
                                                 if (dbFood != null) {
                                                     foodFromDb(index, dbFood)
                                                 } else {
@@ -303,29 +315,34 @@ fun AnalysisScreen() {
                                     val updatedFoods = foods.map { food ->
                                         val dbFood = repo.searchFood(food.name).firstOrNull()
                                         if (dbFood != null) {
-                                            food.copy(
-                                                name    = dbFood.name,
-                                                amount  = "${dbFood.avgWeightG.toInt()}g",
-                                                kcal    = (dbFood.calories * dbFood.avgWeightG / 100).toInt(),
-                                                carbs   = (dbFood.carb * dbFood.avgWeightG / 100).toInt(),
-                                                protein = (dbFood.protein * dbFood.avgWeightG / 100).toInt(),
-                                                fat     = (dbFood.fat * dbFood.avgWeightG / 100).toInt()
+                                            // amount가 g 단위면 그대로, 아니면 개수로 계산
+                                            val totalWeight = if (food.amount.contains("g", ignoreCase = true)) {
+                                                food.amount.replace(Regex("[^0-9.]"), "").toDoubleOrNull() ?: dbFood.avgWeightG
+                                            } else {
+                                                val count = food.amount.replace(Regex("[^0-9.]"), "").toDoubleOrNull() ?: 1.0
+                                                dbFood.avgWeightG * count
+                                            }
+                                            foodFromDb(food.id, dbFood).copy(
+                                                amount  = "${totalWeight.toInt()}g",
+                                                kcal    = (dbFood.calories * totalWeight / dbFood.avgWeightG).toInt(),
+                                                carbs   = (dbFood.carb * totalWeight / dbFood.avgWeightG).toInt(),
+                                                protein = (dbFood.protein * totalWeight / dbFood.avgWeightG).toInt(),
+                                                fat     = (dbFood.fat * totalWeight / dbFood.avgWeightG).toInt()
                                             )
                                         } else {
                                             val nutritionList = GeminiNutritionService.getNutritionList(listOf(food.name))
                                             val nutrition = nutritionList.getOrNull(0)
                                             food.copy(
-                                                name    = nutrition?.foodName ?: food.name,
-                                                kcal    = nutrition?.kcal ?: 0,
-                                                carbs   = nutrition?.carbs ?: 0,
-                                                protein = nutrition?.protein ?: 0,
-                                                fat     = nutrition?.fat ?: 0,
-                                                kcalPer100g    = nutrition?.kcal?.toDouble() ?: 0.0,    // ← 추가
-                                                carbsPer100g   = nutrition?.carbs?.toDouble() ?: 0.0,   // ← 추가
-                                                proteinPer100g = nutrition?.protein?.toDouble() ?: 0.0, // ← 추가
-                                                fatPer100g     = nutrition?.fat?.toDouble() ?: 0.0      // ← 추가
+                                                name           = nutrition?.foodName ?: food.name,
+                                                kcal           = nutrition?.kcal ?: 0,
+                                                carbs          = nutrition?.carbs ?: 0,
+                                                protein        = nutrition?.protein ?: 0,
+                                                fat            = nutrition?.fat ?: 0,
+                                                kcalPer100g    = nutrition?.kcal?.toDouble() ?: 0.0,
+                                                carbsPer100g   = nutrition?.carbs?.toDouble() ?: 0.0,
+                                                proteinPer100g = nutrition?.protein?.toDouble() ?: 0.0,
+                                                fatPer100g     = nutrition?.fat?.toDouble() ?: 0.0
                                             )
-
                                         }
                                     }
                                     withContext(Dispatchers.Main) {
@@ -696,15 +713,7 @@ fun FoodConfirmScreen(
                         val dbFood = repo.searchFood(koreanName).firstOrNull()
                         val newId = (foodList.maxOfOrNull { it.id } ?: 0) + index + 1
                         if (dbFood != null) {
-                            RecognizedFood(
-                                id      = newId,
-                                name    = dbFood.name,
-                                amount  = "${dbFood.avgWeightG.toInt()}g",
-                                kcal    = (dbFood.calories * dbFood.avgWeightG / 100).toInt(),
-                                carbs   = (dbFood.carb * dbFood.avgWeightG / 100).toInt(),
-                                protein = (dbFood.protein * dbFood.avgWeightG / 100).toInt(),
-                                fat     = (dbFood.fat * dbFood.avgWeightG / 100).toInt()
-                            )
+                            foodFromDb(newId, dbFood)
                         } else {
                             val nutritionList = GeminiNutritionService.getNutritionList(listOf(koreanName))
                             val nutrition = nutritionList.getOrNull(0)
@@ -756,15 +765,7 @@ fun FoodConfirmScreen(
                             val dbFood = repo.searchFood(koreanName).firstOrNull()
                             val newId = (foodList.maxOfOrNull { it.id } ?: 0) + index + 1
                             if (dbFood != null) {
-                                RecognizedFood(
-                                    id      = newId,
-                                    name    = dbFood.name,
-                                    amount  = "${dbFood.avgWeightG.toInt()}g",
-                                    kcal    = (dbFood.calories * dbFood.avgWeightG / 100).toInt(),
-                                    carbs   = (dbFood.carb * dbFood.avgWeightG / 100).toInt(),
-                                    protein = (dbFood.protein * dbFood.avgWeightG / 100).toInt(),
-                                    fat     = (dbFood.fat * dbFood.avgWeightG / 100).toInt()
-                                )
+                                foodFromDb(newId, dbFood)
                             } else {
                                 val nutritionList = GeminiNutritionService.getNutritionList(listOf(koreanName))
                                 val nutrition = nutritionList.getOrNull(0)
@@ -819,15 +820,10 @@ fun FoodConfirmScreen(
                     val repo = FoodRepository(context)
                     val updatedFoods = foods.map { food ->
                         val dbFood = repo.searchFood(food.name).firstOrNull()
+                        android.util.Log.d("FoodItem", "food.amount: ${food.amount}, dbFood: ${dbFood?.name}, avgWeightG: ${dbFood?.avgWeightG}")
+
                         if (dbFood != null) {
-                            food.copy(
-                                name    = dbFood.name,
-                                amount  = "${dbFood.avgWeightG.toInt()}g",
-                                kcal    = (dbFood.calories * dbFood.avgWeightG / 100).toInt(),
-                                carbs   = (dbFood.carb * dbFood.avgWeightG / 100).toInt(),
-                                protein = (dbFood.protein * dbFood.avgWeightG / 100).toInt(),
-                                fat     = (dbFood.fat * dbFood.avgWeightG / 100).toInt()
-                            )
+                            foodFromDb((foodList.maxOfOrNull { it.id } ?: 0) + foods.indexOf(food) + 1, dbFood)
                         } else {
                             val nutritionList = GeminiNutritionService.getNutritionList(listOf(food.name))
                             val nutrition = nutritionList.getOrNull(0)
@@ -1120,7 +1116,12 @@ fun FoodItemCard(
     val focusManager    = LocalFocusManager.current
 
     // 실시간 칼로리 계산
-    val displayGrams = tempAmount.replace("g", "").toDoubleOrNull()
+    val displayGrams = tempAmount
+        .replace("g", "")
+        .replace("G", "")
+        .trim()
+        .toDoubleOrNull()
+        ?: tempAmount.replace(Regex("[^0-9.]"), "").toDoubleOrNull()
     android.util.Log.d("FoodItem", "displayGrams: $displayGrams, kcalPer100g: ${food.kcalPer100g}")
     val displayKcal = if (food.kcalPer100g > 0 && displayGrams != null)
         (food.kcalPer100g * displayGrams / 100).toInt() else food.kcal

@@ -36,6 +36,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import android.widget.Toast
 import com.example.foodanalyzer.data.FirestoreService
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.tasks.await
 
 val SettingsBg   = Color(0xFFF7F7F7)
 val ProfileGreen = Color(0xFF6ECBA0)
@@ -204,11 +206,67 @@ fun SettingsScreen() {
     if (showDelete) {
         ConfirmDialog(
             title        = "회원 탈퇴",
-            message      = "정말 탈퇴 하시겠어요?\n모든 데이터가 삭제됩니다.",
+            message      = "정말 탈퇴 하시겠어요?\n모든 데이터가 영구 삭제됩니다.",
             confirmText  = "탈퇴하기",
             confirmColor = LogoutRed,
-            onConfirm    = { showDelete = false },
-            onDismiss    = { showDelete = false }
+            onConfirm    = {
+                CoroutineScope(Dispatchers.IO).launch {
+                    try {
+                        val uid = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid
+
+                        // 1. Firestore 데이터 먼저 삭제
+                        if (uid != null) {
+                            val db = com.google.firebase.firestore.FirebaseFirestore.getInstance()
+                            val userRef = db.collection("users").document(uid)
+                            userRef.collection("dailyLogs").get().await().documents.forEach {
+                                it.reference.delete().await()
+                            }
+                            userRef.collection("profile").document("data").delete().await()
+                            userRef.collection("goals").document("data").delete().await()
+                            userRef.delete().await()
+                        }
+
+                        // 2. Room DB 초기화
+                        val roomDb = com.example.foodanalyzer.data.AppDatabase.getInstance(context)
+                        roomDb.dailyLogDao().deleteAll()
+
+                    } catch (e: Exception) {
+                        android.util.Log.e("Delete", "데이터 삭제 실패: ${e.message}")
+                    }
+
+                    withContext(Dispatchers.Main) {
+                        AppMealData.mealResultMap.clear()
+                        AppMealData.photoMap.clear()
+                        AppProfile.nickname = "사용자"
+                        AppProfile.height   = "170.0"
+                        AppProfile.weight   = "65.0"
+                        AppProfile.age      = "25"
+                        AppProfile.gender   = "남성"
+                        AppProfile.save(context)
+
+                        // 3. Firebase Auth 계정 삭제 (마지막에)
+                        com.google.firebase.auth.FirebaseAuth.getInstance().currentUser
+                            ?.delete()
+                            ?.addOnCompleteListener { task ->
+                                if (task.isSuccessful) {
+                                    val googleSignInClient = com.google.android.gms.auth.api.signin.GoogleSignIn.getClient(
+                                        context,
+                                        com.google.android.gms.auth.api.signin.GoogleSignInOptions.Builder(
+                                            com.google.android.gms.auth.api.signin.GoogleSignInOptions.DEFAULT_SIGN_IN
+                                        ).build()
+                                    )
+                                    googleSignInClient.signOut().addOnCompleteListener {
+                                        showDelete = false
+                                        val intent = context.packageManager.getLaunchIntentForPackage(context.packageName)
+                                        intent?.addFlags(android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                                        context.startActivity(intent)
+                                    }
+                                }
+                            }
+                    }
+                }
+            },
+            onDismiss = { showDelete = false }
         )
     }
 }
