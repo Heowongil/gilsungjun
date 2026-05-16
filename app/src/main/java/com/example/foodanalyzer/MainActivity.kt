@@ -31,6 +31,7 @@ import com.example.foodanalyzer.data.DatabaseInitializer
 import com.google.firebase.auth.FirebaseAuth
 import kotlinx.coroutines.tasks.await
 import androidx.compose.material3.CircularProgressIndicator
+
 sealed class BottomNavItem(
     val route: String,
     val title: String,
@@ -55,7 +56,6 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // 네트워크 콜백 등록
         val cm = getSystemService(CONNECTIVITY_SERVICE) as ConnectivityManager
         isOnlineState.value = isOnline(this)
 
@@ -118,10 +118,10 @@ class MainActivity : ComponentActivity() {
                 val online by isOnlineState
 
                 var isLoggedIn by remember { mutableStateOf(auth.currentUser != null) }
+                var isFirstLogin by remember { mutableStateOf(false) }
                 var needOnboarding by remember { mutableStateOf(false) }
                 var isCheckingOnboarding by remember { mutableStateOf(false) }
 
-                // 로그인됐을 때 Firestore에 프로필 있는지 확인
                 LaunchedEffect(isLoggedIn) {
                     if (isLoggedIn) {
                         isCheckingOnboarding = true
@@ -133,11 +133,16 @@ class MainActivity : ComponentActivity() {
                                     .collection("profile").document("data")
                                     .get().await()
                                 if (doc.exists()) {
-                                    // 프로필 있으면 자동 복원
-                                    com.example.foodanalyzer.data.FirestoreService.restore(this@MainActivity)
+                                    if (isFirstLogin) {
+                                        // 로그인할 때만 초기화 후 복원
+                                        val db = AppDatabase.getInstance(this@MainActivity)
+                                        db.dailyLogDao().deleteAll()
+                                        AppMealData.mealResultMap.clear()
+                                        AppMealData.photoMap.clear()
+                                        com.example.foodanalyzer.data.FirestoreService.restore(this@MainActivity)
+                                    }
                                     needOnboarding = false
                                 } else {
-                                    // 프로필 없으면 온보딩
                                     needOnboarding = true
                                 }
                             } catch (e: Exception) {
@@ -149,17 +154,18 @@ class MainActivity : ComponentActivity() {
                 }
 
                 when {
-                    !isLoggedIn && online -> LoginScreen(onLoginSuccess = { isLoggedIn = true })
+                    !isLoggedIn && online -> LoginScreen(onLoginSuccess = {
+                        isFirstLogin = true
+                        isLoggedIn = true
+                    })
                     !isLoggedIn && !online -> OfflineScreen()
                     isCheckingOnboarding -> {
-                        // 확인 중 로딩 화면
                         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                             CircularProgressIndicator(color = Color(0xFF4CAF50))
                         }
                     }
                     needOnboarding -> OnboardingScreen(onComplete = {
                         needOnboarding = false
-                        // Firestore에 백업
                         lifecycleScope.launch {
                             try {
                                 com.example.foodanalyzer.data.FirestoreService.backup(this@MainActivity)

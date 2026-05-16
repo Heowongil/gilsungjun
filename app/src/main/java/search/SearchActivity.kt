@@ -58,8 +58,8 @@ class SearchActivity : AppCompatActivity() {
                 Toast.makeText(this, "텍스트를 입력해주세요!", Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
             }
-            tvResult.text = "분석 중..."
-            callGemini(inputText)
+            tvResult.text = "검색 중..."
+            searchFood(inputText)
         }
 
         speechRecognizer.setRecognitionListener(object : RecognitionListener {
@@ -81,14 +81,50 @@ class SearchActivity : AppCompatActivity() {
                 val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                 if (!matches.isNullOrEmpty()) {
                     val recognizedText = matches[0]
-                    tvResult.text = "인식됨: $recognizedText\n(AI 분석 중...)"
-                    callGemini(recognizedText)
+                    tvResult.text = "인식됨: $recognizedText\n(검색 중...)"
+                    searchFood(recognizedText)
                 }
             }
 
             override fun onPartialResults(partialResults: Bundle?) {}
             override fun onEvent(eventType: Int, params: Bundle?) {}
         })
+    }
+
+    private fun searchFood(inputText: String) {
+        val isSimpleFoodName = inputText.length <= 10 &&
+                !inputText.contains(Regex("[0-9]")) &&
+                !inputText.contains(Regex("먹|마셨|했|개|잔|그릇|인분|조각|판|봉지"))
+
+        if (isSimpleFoodName) {
+            CoroutineScope(Dispatchers.IO).launch {
+                val repo = com.example.foodanalyzer.data.FoodRepository(this@SearchActivity)
+                val results = repo.searchFood(inputText)
+
+                withContext(Dispatchers.Main) {
+                    if (results.isNotEmpty()) {
+                        val jsonArray = org.json.JSONArray()
+                        results.take(3).forEach { food ->
+                            jsonArray.put(org.json.JSONObject().apply {
+                                put("food", food.name)
+                                put("amount", 1)
+                                put("unit", "인분")
+                            })
+                        }
+                        tvResult.text = "검색 결과:\n${results.take(3).joinToString(", ") { it.name }}"
+                        val resultIntent = Intent()
+                        resultIntent.putExtra("food_list_json", jsonArray.toString())
+                        setResult(RESULT_OK, resultIntent)
+                        finish()
+                    } else {
+                        tvResult.text = "AI 분석 중..."
+                        callGemini(inputText)
+                    }
+                }
+            }
+        } else {
+            callGemini(inputText)
+        }
     }
 
     private fun callGemini(inputText: String) {

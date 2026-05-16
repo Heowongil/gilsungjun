@@ -27,15 +27,11 @@ import java.time.YearMonth
 import java.time.format.TextStyle
 import java.util.Locale
 import androidx.compose.foundation.border
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.nativeCanvas
 
-// ───────────────────────────────────────────────
-// 뷰 모드
-// ───────────────────────────────────────────────
 enum class CalendarViewMode { CALENDAR, MONTH, YEAR }
 
-// ───────────────────────────────────────────────
-// 데이터 모델
-// ───────────────────────────────────────────────
 data class DailyStats(
     val kcal: Int,
     val carbs: Int,
@@ -53,7 +49,6 @@ fun calorieDotColor(kcal: Int, goal: Int = 2000): Color = when {
 fun getDummyStats(date: LocalDate): DailyStats? {
     if (date.isAfter(LocalDate.now())) return null
     val nutrition = AppMealData.getDayNutrition(date.toString())
-    // 기록된 데이터가 없으면 null 반환
     if (nutrition.calories == 0) return null
     return DailyStats(
         kcal    = nutrition.calories,
@@ -63,9 +58,6 @@ fun getDummyStats(date: LocalDate): DailyStats? {
     )
 }
 
-// ───────────────────────────────────────────────
-// StatsScreen
-// ───────────────────────────────────────────────
 @Composable
 fun StatsScreen() {
     val today        = LocalDate.now()
@@ -82,6 +74,11 @@ fun StatsScreen() {
             .background(Color.White)
             .verticalScroll(rememberScrollState())
     ) {
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // ── 최근 7일 꺾은선 그래프 ──
+        WeeklyLineChart()
+
         Spacer(modifier = Modifier.height(16.dp))
 
         // ── 월 네비게이터 ──
@@ -111,7 +108,6 @@ fun StatsScreen() {
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        // ── 캘린더 / 월 선택 / 년도 선택 ──
         when (viewMode) {
             CalendarViewMode.MONTH -> {
                 MonthPickerGrid(
@@ -176,7 +172,6 @@ fun StatsScreen() {
             modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
         )
 
-        // ── 선택된 날짜 통계 ──
         SelectedDateStats(
             date  = selectedDate,
             stats = selectedStats
@@ -186,9 +181,230 @@ fun StatsScreen() {
     }
 }
 
-// ───────────────────────────────────────────────
-// 월 네비게이터
-// ───────────────────────────────────────────────
+@Composable
+fun WeeklyLineChart() {
+    val today = LocalDate.now()
+    val days = (6 downTo 0).map { today.minusDays(it.toLong()) }
+    val dataList = days.map { getDummyStats(it) }
+
+    val goal = AppGoals.calories
+
+    val kcalData    = dataList.map { it?.kcal?.toFloat() ?: 0f }
+    val carbsData   = dataList.map { it?.carbs?.toFloat() ?: 0f }
+    val proteinData = dataList.map { it?.protein?.toFloat() ?: 0f }
+    val fatData     = dataList.map { it?.fat?.toFloat() ?: 0f }
+
+    var selectedLines by remember {
+        mutableStateOf(setOf("칼로리", "탄수화물", "단백질", "지방"))
+    }
+
+    val lineColors = mapOf(
+        "칼로리"  to Color(0xFFEF5350),
+        "탄수화물" to Color(0xFF4CAF50),
+        "단백질"  to Color(0xFF5B9BD5),
+        "지방"   to Color(0xFFE6A020)
+    )
+
+    val lineData = mapOf(
+        "칼로리"  to kcalData,
+        "탄수화물" to carbsData,
+        "단백질"  to proteinData,
+        "지방"   to fatData
+    )
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        elevation = CardDefaults.cardElevation(2.dp)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    "최근 7일 달성률 (%)",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFF1A1A1A)
+                )
+                Text(
+                    "목표: $goal kcal",
+                    fontSize = 12.sp,
+                    color = Color(0xFF999999)
+                )
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                lineColors.forEach { (label, color) ->
+                    val isSelected = label in selectedLines
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(20.dp))
+                            .background(if (isSelected) color else Color(0xFFEEEEEE))
+                            .clickable {
+                                selectedLines = if (isSelected && selectedLines.size > 1) {
+                                    selectedLines - label
+                                } else if (!isSelected) {
+                                    selectedLines + label
+                                } else selectedLines
+                            }
+                            .padding(horizontal = 10.dp, vertical = 5.dp)
+                    ) {
+                        Text(
+                            label,
+                            fontSize = 12.sp,
+                            color = if (isSelected) Color.White else Color(0xFF888888),
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            androidx.compose.foundation.Canvas(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(200.dp)
+            ) {
+                val width = size.width
+                val height = size.height
+                val padLeft = 50f
+                val padBottom = 30f
+                val chartW = width - padLeft
+                val chartH = height - padBottom
+
+                // 실제 데이터 최대 퍼센트 계산 (동적)
+                val allPercents = lineData.flatMap { (label, data) ->
+                    if (label !in selectedLines) return@flatMap emptyList()
+                    data.map { value ->
+                        val goalVal = when (label) {
+                            "칼로리"  -> AppGoals.calories.toFloat()
+                            "탄수화물" -> AppGoals.carbs.toFloat()
+                            "단백질"  -> AppGoals.protein.toFloat()
+                            "지방"   -> AppGoals.fat.toFloat()
+                            else -> 1f
+                        }
+                        if (goalVal > 0) (value / goalVal) * 100f else 0f
+                    }
+                }
+                val maxPercent = ((allPercents.maxOrNull() ?: 100f)
+                    .coerceAtLeast(110f) / 50f).toInt() * 50f + 50f
+
+                val paint = android.graphics.Paint().apply {
+                    color = android.graphics.Color.parseColor("#999999")
+                    textSize = 28f
+                    textAlign = android.graphics.Paint.Align.RIGHT
+                }
+
+                val stepCount = (maxPercent / 50f).toInt()
+                for (i in 0..stepCount) {
+                    val step = i * 50f
+                    val y = chartH - (step / maxPercent) * chartH
+
+                    drawLine(
+                        color = androidx.compose.ui.graphics.Color(0xFFEEEEEE),
+                        start = androidx.compose.ui.geometry.Offset(padLeft, y),
+                        end = androidx.compose.ui.geometry.Offset(width, y),
+                        strokeWidth = 1f
+                    )
+
+                    drawContext.canvas.nativeCanvas.drawText(
+                        "${step.toInt()}%",
+                        padLeft - 4f,
+                        y + 10f,
+                        paint
+                    )
+                }
+
+                // Goal 100% 라인
+                val goalY = chartH - (100f / maxPercent) * chartH
+                drawLine(
+                    color = androidx.compose.ui.graphics.Color(0xFF888888),
+                    start = androidx.compose.ui.geometry.Offset(padLeft, goalY),
+                    end = androidx.compose.ui.geometry.Offset(width, goalY),
+                    strokeWidth = 2f,
+                    pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(10f, 5f))
+                )
+
+                val goalPaint = android.graphics.Paint().apply {
+                    color = android.graphics.Color.parseColor("#888888")
+                    textSize = 28f
+                    textAlign = android.graphics.Paint.Align.RIGHT
+                }
+                drawContext.canvas.nativeCanvas.drawText(
+                    "Goal",
+                    width - 4f,
+                    goalY - 6f,
+                    goalPaint
+                )
+
+                // 각 라인 그리기
+                lineData.forEach { (label, data) ->
+                    if (label !in selectedLines) return@forEach
+                    val color = lineColors[label] ?: return@forEach
+
+                    val points = data.mapIndexed { i, value ->
+                        val x = padLeft + i * (chartW / (days.size - 1).toFloat())
+                        val goalVal = when (label) {
+                            "칼로리"  -> AppGoals.calories.toFloat()
+                            "탄수화물" -> AppGoals.carbs.toFloat()
+                            "단백질"  -> AppGoals.protein.toFloat()
+                            "지방"   -> AppGoals.fat.toFloat()
+                            else -> 1f
+                        }
+                        val percent = if (goalVal > 0) (value / goalVal) * 100f else 0f
+                        val y = chartH - (percent / maxPercent * chartH).coerceIn(0f, chartH)
+                        androidx.compose.ui.geometry.Offset(x, y)
+                    }
+
+                    for (i in 0 until points.size - 1) {
+                        drawLine(
+                            color = color,
+                            start = points[i],
+                            end = points[i + 1],
+                            strokeWidth = 3f
+                        )
+                    }
+
+                    points.forEach { point ->
+                        drawCircle(color = color, radius = 5f, center = point)
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(4.dp))
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 40.dp),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                days.forEach { date ->
+                    Text(
+                        "${date.monthValue}/${date.dayOfMonth}",
+                        fontSize = 10.sp,
+                        color = Color(0xFF999999),
+                        textAlign = TextAlign.Center
+                    )
+                }
+            }
+        }
+    }
+}
+
 @Composable
 fun MonthNavigator(
     currentMonth: YearMonth,
@@ -214,7 +430,6 @@ fun MonthNavigator(
             )
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
-            // 년도 (클릭 시 년도 선택 그리드)
             Text(
                 text = "${currentMonth.year}년",
                 fontSize = 20.sp,
@@ -227,7 +442,6 @@ fun MonthNavigator(
                     .padding(horizontal = 6.dp, vertical = 4.dp)
             )
             Spacer(modifier = Modifier.width(4.dp))
-            // 월 (클릭 시 월 선택 그리드)
             Text(
                 text = "${currentMonth.monthValue}월",
                 fontSize = 20.sp,
@@ -251,9 +465,6 @@ fun MonthNavigator(
     }
 }
 
-// ───────────────────────────────────────────────
-// 월 선택 그리드
-// ───────────────────────────────────────────────
 @Composable
 fun MonthPickerGrid(
     currentYear: Int,
@@ -298,9 +509,6 @@ fun MonthPickerGrid(
     }
 }
 
-// ───────────────────────────────────────────────
-// 년도 선택 그리드
-// ───────────────────────────────────────────────
 @Composable
 fun YearPickerGrid(
     selectedYear: Int,
@@ -340,9 +548,6 @@ fun YearPickerGrid(
     }
 }
 
-// ───────────────────────────────────────────────
-// 캘린더 그리드
-// ───────────────────────────────────────────────
 @Composable
 fun CalendarGrid(
     yearMonth: YearMonth,
@@ -369,7 +574,6 @@ fun CalendarGrid(
     }
 
     Column(modifier = Modifier.padding(horizontal = 12.dp)) {
-        // 요일 헤더
         Row(modifier = Modifier.fillMaxWidth()) {
             dayLabels.forEach { label ->
                 Text(
@@ -384,7 +588,6 @@ fun CalendarGrid(
         }
         Spacer(modifier = Modifier.height(8.dp))
 
-        // 날짜 셀
         cells.chunked(7).forEach { week ->
             Row(
                 modifier = Modifier
@@ -409,7 +612,6 @@ fun CalendarGrid(
                                 onDateClick(date)
                             }
                     ) {
-                        // 배경 원
                         if (dotColor != Color.Transparent || isSelected || isToday) {
                             Box(
                                 modifier = Modifier
@@ -456,9 +658,6 @@ fun CalendarGrid(
     }
 }
 
-// ───────────────────────────────────────────────
-// 선택된 날짜 통계
-// ───────────────────────────────────────────────
 @Composable
 fun SelectedDateStats(date: LocalDate, stats: DailyStats?) {
     val month     = date.monthValue
@@ -514,9 +713,6 @@ fun SelectedDateStats(date: LocalDate, stats: DailyStats?) {
     }
 }
 
-// ───────────────────────────────────────────────
-// 영양소 통계 아이템
-// ───────────────────────────────────────────────
 @Composable
 fun NutrientStatItem(label: String, value: String, color: Color) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {

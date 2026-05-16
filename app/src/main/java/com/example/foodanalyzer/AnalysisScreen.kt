@@ -16,11 +16,12 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Photo
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -29,6 +30,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -36,27 +38,20 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import coil.compose.rememberAsyncImagePainter
-import java.time.LocalDate
 import android.content.Intent
-import androidx.compose.ui.platform.LocalContext
+import android.graphics.BitmapFactory
+import android.widget.Toast
+import coil.compose.rememberAsyncImagePainter
+import com.example.foodanalyzer.camera.FoodClassifier
 import com.example.foodanalyzer.data.FoodRepository
+import com.example.foodanalyzer.data.GeminiNutritionService
 import com.example.foodanalyzer.data.entity.Food
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import android.graphics.BitmapFactory
-import com.example.foodanalyzer.camera.FoodClassifier
-import com.example.foodanalyzer.data.GeminiNutritionService
-import kotlinx.coroutines.withContext
-import android.widget.Toast
-import androidx.compose.material.icons.filled.Photo
-import androidx.compose.material.icons.filled.CameraAlt
-import androidx.compose.material.icons.filled.Edit
-// ───────────────────────────────────────────────
-// 색상
-// ───────────────────────────────────────────────
+import java.time.LocalDate
+
 val MealCardBg       = Color(0xFFFFFFFF)
 val AnalyzeGreen     = Color(0xFFD6F0D6)
 val AnalyzeGreenText = Color(0xFF4CAF50)
@@ -65,9 +60,6 @@ val ResetRedText     = Color(0xFFE57373)
 val PlusBlue         = Color(0xFFD6EAF8)
 val PlusBlueIcon     = Color(0xFF5B9BD5)
 
-// ───────────────────────────────────────────────
-// 식사 종류
-// ───────────────────────────────────────────────
 enum class MealType(val label: String, val hint: String) {
     BREAKFAST("아침", "아침을 기록해 보세요."),
     LUNCH("점심", "점심을 기록해 보세요."),
@@ -75,9 +67,6 @@ enum class MealType(val label: String, val hint: String) {
     SNACK("간식", "간식을 기록해 보세요.")
 }
 
-// ───────────────────────────────────────────────
-// 데이터 모델
-// ───────────────────────────────────────────────
 data class RecognizedFood(
     val id: Int,
     val name: String,
@@ -85,10 +74,13 @@ data class RecognizedFood(
     val kcal: Int = 0,
     val carbs: Int = 0,
     val protein: Int = 0,
-    val fat: Int = 0
+    val fat: Int = 0,
+    val kcalPer100g: Double = 0.0,
+    val carbsPer100g: Double = 0.0,
+    val proteinPer100g: Double = 0.0,
+    val fatPer100g: Double = 0.0
 )
 
-// 식사별 저장된 결과
 data class MealResult(
     val foods: List<RecognizedFood>,
     val totalKcal: Int    = foods.sumOf { it.kcal },
@@ -97,36 +89,43 @@ data class MealResult(
     val totalFat: Int     = foods.sumOf { it.fat }
 )
 
-// ───────────────────────────────────────────────
-// 더미 DB
-// ───────────────────────────────────────────────
-// Room DB에서 음식 검색 결과를 RecognizedFood로 변환
 fun Food.toRecognizedFood(amount: String = "1인분"): RecognizedFood {
     return RecognizedFood(
-        id = this.id,
-        name = this.name,
-        amount = amount,
-        kcal = this.calories.toInt(),
-        carbs = this.carb.toInt(),
-        protein = this.protein.toInt(),
-        fat = this.fat.toInt()
+        id              = this.id,
+        name            = this.name,
+        amount          = "${this.avgWeightG.toInt()}g",
+        kcal            = (this.calories * this.avgWeightG / 100).toInt(),
+        carbs           = (this.carb * this.avgWeightG / 100).toInt(),
+        protein         = (this.protein * this.avgWeightG / 100).toInt(),
+        fat             = (this.fat * this.avgWeightG / 100).toInt(),
+        kcalPer100g     = this.calories,
+        carbsPer100g    = this.carb,
+        proteinPer100g  = this.protein,
+        fatPer100g      = this.fat
     )
 }
 
-// AI 인식 실패 시 임시 결과 (나중에 YOLO 모델로 교체)
 fun getFakeAiResult(): List<RecognizedFood> = listOf(
-    RecognizedFood(1, "흰쌀밥", "1공기", 313, 68, 5, 0),
-    RecognizedFood(2, "김치", "1접시", 15, 2, 1, 0)
+    RecognizedFood(1, "흰쌀밥", "210g", 313, 68, 5, 0),
+    RecognizedFood(2, "김치", "50g", 15, 2, 1, 0)
 )
-
-// ───────────────────────────────────────────────
-// 화면 단계
-// ───────────────────────────────────────────────
+fun foodFromDb(id: Int, dbFood: Food): RecognizedFood {
+    return RecognizedFood(
+        id             = id,
+        name           = dbFood.name,
+        amount         = "${dbFood.avgWeightG.toInt()}g",
+        kcal           = (dbFood.calories * dbFood.avgWeightG / 100).toInt(),
+        carbs          = (dbFood.carb * dbFood.avgWeightG / 100).toInt(),
+        protein        = (dbFood.protein * dbFood.avgWeightG / 100).toInt(),
+        fat            = (dbFood.fat * dbFood.avgWeightG / 100).toInt(),
+        kcalPer100g    = dbFood.calories,
+        carbsPer100g   = dbFood.carb,
+        proteinPer100g = dbFood.protein,
+        fatPer100g     = dbFood.fat
+    )
+}
 enum class AnalysisStep { MEAL_LIST, CONFIRM, RESULT }
 
-// ───────────────────────────────────────────────
-// AnalysisScreen - 최상위
-// ───────────────────────────────────────────────
 @Composable
 fun AnalysisScreen() {
     val today    = LocalDate.now()
@@ -137,64 +136,39 @@ fun AnalysisScreen() {
     var currentStep  by remember { mutableStateOf(AnalysisStep.MEAL_LIST) }
     var currentMeal  by remember { mutableStateOf<MealType?>(null) }
 
-    val photoMap = AppMealData.photoMap
-
-    // 날짜+식사 별로 저장된 결과 (기록 완료된 것들)
-    // key: "날짜_식사종류"
+    val photoMap      = AppMealData.photoMap
     val mealResultMap = AppMealData.mealResultMap
 
-    // 확인/수정 화면용 임시 상태
     val editFoodList = remember { mutableStateListOf<RecognizedFood>() }
     val editAmounts  = remember { mutableStateMapOf<Int, String>() }
 
-    // 결과 화면용
     var confirmedFoods by remember { mutableStateOf<List<RecognizedFood>>(emptyList()) }
 
     val context = LocalContext.current
-    var searchQuery by remember { mutableStateOf("") }
     var searchResults by remember { mutableStateOf<List<RecognizedFood>>(emptyList()) }
     var isSearching by remember { mutableStateOf(false) }
 
-    // 앱 시작 시 DB에서 오늘 데이터 불러오기
     LaunchedEffect(selectedDate) {
         val db = com.example.foodanalyzer.data.AppDatabase.getInstance(context)
         val dao = db.dailyLogDao()
         val logs = dao.getByDate(selectedDate.toString())
 
-        // 식사 타입별로 그룹화해서 mealResultMap에 넣기
         val grouped = logs.groupBy { it.mealType }
         grouped.forEach { (mealLabel, logList) ->
             val mealType = MealType.entries.find { it.label == mealLabel } ?: return@forEach
             val key = "${selectedDate}_${mealType.name}"
             val foods = logList.map { log ->
                 RecognizedFood(
-                    id = log.foodId,
-                    name = log.foodName,
-                    amount = "${log.weightG.toInt()}g",
-                    kcal = log.calories.toInt(),
-                    carbs = log.carb.toInt(),
+                    id      = log.foodId,
+                    name    = log.foodName,
+                    amount  = "${log.weightG.toInt()}g",
+                    kcal    = log.calories.toInt(),
+                    carbs   = log.carb.toInt(),
                     protein = log.protein.toInt(),
-                    fat = log.fat.toInt()
+                    fat     = log.fat.toInt()
                 )
             }
             mealResultMap[key] = MealResult(foods)
-        }
-    }
-
-    // 검색 함수
-    fun searchFood(query: String) {
-        if (query.isBlank()) {
-            searchResults = emptyList()
-            return
-        }
-        isSearching = true
-        CoroutineScope(Dispatchers.IO).launch {
-            val repo = FoodRepository(context)
-            val results = repo.searchFood(query)
-            withContext(Dispatchers.Main) {
-                searchResults = results.map { it.toRecognizedFood() }
-                isSearching = false
-            }
         }
     }
 
@@ -202,7 +176,6 @@ fun AnalysisScreen() {
 
     when (currentStep) {
 
-        // ── 1단계: 식단 기록 메인 ──
         AnalysisStep.MEAL_LIST -> {
             Column(
                 modifier = Modifier
@@ -226,18 +199,17 @@ fun AnalysisScreen() {
                         val result = mealResultMap[key]
 
                         MealCard(
-                            meal = meal,
-                            photoUri = photoMap[key],
-                            savedResult = result,
+                            meal            = meal,
+                            photoUri        = photoMap[key],
+                            savedResult     = result,
                             onPhotoSelected = { photoMap[key] = it },
-                            onReset = {
+                            onReset         = {
                                 photoMap.remove(key)
                                 mealResultMap.remove(key)
                             },
                             onAnalyze = {
                                 currentMeal = meal
-                                val key = photoKey(selectedDate, meal)
-                                val photoUri = photoMap[key]
+                                val photoUri = photoMap[photoKey(selectedDate, meal)]
 
                                 if (photoUri != null) {
                                     CoroutineScope(Dispatchers.IO).launch {
@@ -248,34 +220,14 @@ fun AnalysisScreen() {
                                             val results = classifier.classify(bitmap)
                                             classifier.close()
 
-                                            android.util.Log.d("TFLite", "추론 결과 개수: ${results.size}")
-                                            results.forEach { android.util.Log.d("TFLite", "결과: ${it.label} / ${it.confidence}") }
-
-                                            // Gemini로 영양성분 조회
-                                            // Gemini로 영양성분 한 번에 조회
-                                            val foodLabels = results.map {
-                                                FoodClassifier.labelToKorean[it.label] ?: it.label
-                                            }
-
-// Room DB에서 먼저 검색
                                             val repo = FoodRepository(context)
                                             val recognizedFoods = results.mapIndexed { index, result ->
                                                 val koreanName = FoodClassifier.labelToKorean[result.label] ?: result.label
                                                 val dbFood = repo.searchFood(koreanName).firstOrNull()
 
                                                 if (dbFood != null) {
-                                                    // DB에서 찾은 경우
-                                                    RecognizedFood(
-                                                        id      = index,
-                                                        name    = dbFood.name,
-                                                        amount  = "1인분",
-                                                        kcal    = dbFood.calories.toInt(),
-                                                        carbs   = dbFood.carb.toInt(),
-                                                        protein = dbFood.protein.toInt(),
-                                                        fat     = dbFood.fat.toInt()
-                                                    )
+                                                    foodFromDb(index, dbFood)
                                                 } else {
-                                                    // DB에 없으면 Gemini API 호출
                                                     val nutritionList = GeminiNutritionService.getNutritionList(listOf(koreanName))
                                                     val nutrition = nutritionList.getOrNull(0)
                                                     RecognizedFood(
@@ -320,12 +272,10 @@ fun AnalysisScreen() {
                                 currentMeal = meal
                                 val existingResult = mealResultMap[key]
                                 if (existingResult != null) {
-                                    // 기존 데이터를 editFoodList에 로드
                                     editFoodList.clear()
                                     editFoodList.addAll(existingResult.foods)
                                     editAmounts.clear()
                                     existingResult.foods.forEach { editAmounts[it.id] = it.amount }
-                                    // 사진/결과 초기화 없이 바로 CONFIRM으로
                                     currentStep = AnalysisStep.CONFIRM
                                 }
                             },
@@ -345,17 +295,29 @@ fun AnalysisScreen() {
                                 foods.forEach { editAmounts[it.id] = it.amount }
 
                                 CoroutineScope(Dispatchers.IO).launch {
-                                    val foodLabels = foods.map { it.name }
-                                    val nutritionList = GeminiNutritionService.getNutritionList(foodLabels)
-                                    val updatedFoods = foods.mapIndexed { index, food ->
-                                        val nutrition = nutritionList.getOrNull(index)
-                                        food.copy(
-                                            name    = nutrition?.foodName ?: food.name,
-                                            kcal    = nutrition?.kcal ?: 0,
-                                            carbs   = nutrition?.carbs ?: 0,
-                                            protein = nutrition?.protein ?: 0,
-                                            fat     = nutrition?.fat ?: 0
-                                        )
+                                    val repo = FoodRepository(context)
+                                    val updatedFoods = foods.map { food ->
+                                        val dbFood = repo.searchFood(food.name).firstOrNull()
+                                        if (dbFood != null) {
+                                            food.copy(
+                                                name    = dbFood.name,
+                                                amount  = "${dbFood.avgWeightG.toInt()}g",
+                                                kcal    = (dbFood.calories * dbFood.avgWeightG / 100).toInt(),
+                                                carbs   = (dbFood.carb * dbFood.avgWeightG / 100).toInt(),
+                                                protein = (dbFood.protein * dbFood.avgWeightG / 100).toInt(),
+                                                fat     = (dbFood.fat * dbFood.avgWeightG / 100).toInt()
+                                            )
+                                        } else {
+                                            val nutritionList = GeminiNutritionService.getNutritionList(listOf(food.name))
+                                            val nutrition = nutritionList.getOrNull(0)
+                                            food.copy(
+                                                name    = nutrition?.foodName ?: food.name,
+                                                kcal    = nutrition?.kcal ?: 0,
+                                                carbs   = nutrition?.carbs ?: 0,
+                                                protein = nutrition?.protein ?: 0,
+                                                fat     = nutrition?.fat ?: 0
+                                            )
+                                        }
                                     }
                                     withContext(Dispatchers.Main) {
                                         editFoodList.clear()
@@ -366,51 +328,46 @@ fun AnalysisScreen() {
                                     }
                                 }
                             }
-
                         )
                     }
                 }
             }
         }
 
-        // ── 2단계: 음식 확인/수정 ──
         AnalysisStep.CONFIRM -> {
             FoodConfirmScreen(
                 foodList    = editFoodList,
                 editAmounts = editAmounts,
                 onBack      = { currentStep = AnalysisStep.MEAL_LIST },
-                onConfirm = { confirmed ->
+                onConfirm   = { confirmed ->
                     confirmedFoods = confirmed
                     currentStep = AnalysisStep.RESULT
                 }
             )
         }
 
-        // ── 3단계: 영양소 결과 ──
         AnalysisStep.RESULT -> {
             NutritionResultScreen(
                 foods    = confirmedFoods,
                 onReEdit = { currentStep = AnalysisStep.CONFIRM },
                 onComplete = {
                     val key = "${selectedDate}_${currentMeal?.name}"
-                    // 메모리에도 저장 (화면 즉시 반영용)
                     mealResultMap[key] = MealResult(confirmedFoods)
 
-                    // Room DB에도 저장 (앱 재시작해도 유지)
                     CoroutineScope(Dispatchers.IO).launch {
                         val db = com.example.foodanalyzer.data.AppDatabase.getInstance(context)
                         val dao = db.dailyLogDao()
                         confirmedFoods.forEach { food ->
                             dao.insert(
                                 com.example.foodanalyzer.data.entity.DailyLog(
-                                    date = selectedDate.toString(),
-                                    foodId = food.id,
+                                    date     = selectedDate.toString(),
+                                    foodId   = food.id,
                                     foodName = food.name,
-                                    weightG = 100.0,
+                                    weightG  = food.amount.replace("g", "").toDoubleOrNull() ?: 100.0,
                                     calories = food.kcal.toDouble(),
-                                    carb = food.carbs.toDouble(),
-                                    protein = food.protein.toDouble(),
-                                    fat = food.fat.toDouble(),
+                                    carb     = food.carbs.toDouble(),
+                                    protein  = food.protein.toDouble(),
+                                    fat      = food.fat.toDouble(),
                                     mealType = currentMeal?.label ?: "기타"
                                 )
                             )
@@ -423,14 +380,11 @@ fun AnalysisScreen() {
     }
 }
 
-// ───────────────────────────────────────────────
-// 식사 카드
-// ───────────────────────────────────────────────
 @Composable
 fun MealCard(
     meal: MealType,
     photoUri: Uri?,
-    savedResult: MealResult?,       // 기록 완료된 결과
+    savedResult: MealResult?,
     onPhotoSelected: (Uri) -> Unit,
     onReset: () -> Unit,
     onAnalyze: () -> Unit,
@@ -438,7 +392,6 @@ fun MealCard(
     onBarcodeResult: (RecognizedFood) -> Unit,
     onSearchResult: (List<RecognizedFood>) -> Unit
 ) {
-
     val context = LocalContext.current
 
     val launcher = rememberLauncherForActivityResult(
@@ -503,7 +456,6 @@ fun MealCard(
         }
     }
 
-
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(20.dp),
@@ -515,7 +467,6 @@ fun MealCard(
                 .fillMaxWidth()
                 .padding(20.dp)
         ) {
-            // ── 헤더 ──
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -528,7 +479,6 @@ fun MealCard(
                     color = Color(0xFF1A1A1A)
                 )
 
-                // 결과 있으면 수정 버튼, 없으면 + 버튼
                 if (savedResult != null) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
@@ -563,10 +513,8 @@ fun MealCard(
                             modifier = Modifier.size(22.dp)
                         )
                     }
-
                     Spacer(modifier = Modifier.width(8.dp))
-
-// 카메라 버튼
+                    // 카메라 버튼
                     Box(
                         contentAlignment = Alignment.Center,
                         modifier = Modifier
@@ -585,10 +533,8 @@ fun MealCard(
                             modifier = Modifier.size(22.dp)
                         )
                     }
-
                     Spacer(modifier = Modifier.width(8.dp))
-
-// 텍스트 입력 버튼
+                    // 텍스트 입력 버튼
                     Box(
                         contentAlignment = Alignment.Center,
                         modifier = Modifier
@@ -612,12 +558,9 @@ fun MealCard(
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // ── 결과 있을 때: 영양소 요약 표시 ──
             if (savedResult != null) {
                 SavedResultSummary(result = savedResult)
-            }
-            // ── 사진 있고 결과 없을 때: 분석 버튼 ──
-            else if (photoUri != null) {
+            } else if (photoUri != null) {
                 Box(modifier = Modifier.wrapContentSize()) {
                     Image(
                         painter = rememberAsyncImagePainter(photoUri),
@@ -671,18 +614,13 @@ fun MealCard(
                         Text("초기화", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = ResetRedText)
                     }
                 }
-            }
-            // ── 둘 다 없을 때: 힌트 텍스트 ──
-            else {
+            } else {
                 Text(meal.hint, fontSize = 14.sp, color = Color(0xFFAAAAAA))
             }
         }
     }
 }
 
-// ───────────────────────────────────────────────
-// 저장된 결과 요약 (카드 내부)
-// ───────────────────────────────────────────────
 @Composable
 fun SavedResultSummary(result: MealResult) {
     Card(
@@ -696,7 +634,6 @@ fun SavedResultSummary(result: MealResult) {
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 14.dp)
         ) {
-            // 총 칼로리
             Text(
                 "${result.totalKcal} kcal",
                 fontSize = 26.sp,
@@ -704,7 +641,6 @@ fun SavedResultSummary(result: MealResult) {
                 color = Color(0xFF1A1A1A)
             )
             Spacer(modifier = Modifier.height(10.dp))
-            // 탄 / 단 / 지
             Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
                 NutrientMiniItem("탄수화물", "${result.totalCarbs}g")
                 NutrientMiniItem("단백질",  "${result.totalProtein}g")
@@ -714,9 +650,6 @@ fun SavedResultSummary(result: MealResult) {
     }
 }
 
-// ───────────────────────────────────────────────
-// 영양소 미니 아이템 (카드 내부용)
-// ───────────────────────────────────────────────
 @Composable
 fun NutrientMiniItem(label: String, value: String) {
     Column {
@@ -725,9 +658,6 @@ fun NutrientMiniItem(label: String, value: String) {
     }
 }
 
-// ───────────────────────────────────────────────
-// 음식 확인/수정 화면
-// ───────────────────────────────────────────────
 @Composable
 fun FoodConfirmScreen(
     foodList: MutableList<RecognizedFood>,
@@ -735,7 +665,174 @@ fun FoodConfirmScreen(
     onBack: () -> Unit,
     onConfirm: (List<RecognizedFood>) -> Unit
 ) {
+    val context = LocalContext.current
     var inputFoodName by remember { mutableStateOf("") }
+
+    // ── 갤러리 런처 ──
+    val galleryLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uri?.let {
+            CoroutineScope(Dispatchers.IO).launch {
+                try {
+                    val inputStream = context.contentResolver.openInputStream(uri)
+                    val bitmap = BitmapFactory.decodeStream(inputStream)
+                    val classifier = FoodClassifier(context)
+                    val results = classifier.classify(bitmap)
+                    classifier.close()
+
+                    val repo = FoodRepository(context)
+                    val newFoods = results.mapIndexed { index, result ->
+                        val koreanName = FoodClassifier.labelToKorean[result.label] ?: result.label
+                        val dbFood = repo.searchFood(koreanName).firstOrNull()
+                        val newId = (foodList.maxOfOrNull { it.id } ?: 0) + index + 1
+                        if (dbFood != null) {
+                            RecognizedFood(
+                                id      = newId,
+                                name    = dbFood.name,
+                                amount  = "${dbFood.avgWeightG.toInt()}g",
+                                kcal    = (dbFood.calories * dbFood.avgWeightG / 100).toInt(),
+                                carbs   = (dbFood.carb * dbFood.avgWeightG / 100).toInt(),
+                                protein = (dbFood.protein * dbFood.avgWeightG / 100).toInt(),
+                                fat     = (dbFood.fat * dbFood.avgWeightG / 100).toInt()
+                            )
+                        } else {
+                            val nutritionList = GeminiNutritionService.getNutritionList(listOf(koreanName))
+                            val nutrition = nutritionList.getOrNull(0)
+                            RecognizedFood(
+                                id      = newId,
+                                name    = nutrition?.foodName ?: koreanName,
+                                amount  = "1인분",
+                                kcal    = nutrition?.kcal ?: 0,
+                                carbs   = nutrition?.carbs ?: 0,
+                                protein = nutrition?.protein ?: 0,
+                                fat     = nutrition?.fat ?: 0
+                            )
+                        }
+                    }
+                    withContext(Dispatchers.Main) {
+                        foodList.addAll(newFoods)
+                        newFoods.forEach { editAmounts[it.id] = it.amount }
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.e("Gallery", "에러: ${e.message}")
+                }
+            }
+        }
+    }
+
+    // ── 카메라 런처 ──
+    val cameraLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == android.app.Activity.RESULT_OK) {
+            val uriString = result.data?.getStringExtra("photo_uri")
+            uriString?.let { uriStr ->
+                val uri = Uri.parse(uriStr)
+                CoroutineScope(Dispatchers.IO).launch {
+                    try {
+                        val inputStream = context.contentResolver.openInputStream(uri)
+                        val bitmap = BitmapFactory.decodeStream(inputStream)
+                        val classifier = FoodClassifier(context)
+                        val results = classifier.classify(bitmap)
+                        classifier.close()
+
+                        val repo = FoodRepository(context)
+                        val newFoods = results.mapIndexed { index, result ->
+                            val koreanName = FoodClassifier.labelToKorean[result.label] ?: result.label
+                            val dbFood = repo.searchFood(koreanName).firstOrNull()
+                            val newId = (foodList.maxOfOrNull { it.id } ?: 0) + index + 1
+                            if (dbFood != null) {
+                                RecognizedFood(
+                                    id      = newId,
+                                    name    = dbFood.name,
+                                    amount  = "${dbFood.avgWeightG.toInt()}g",
+                                    kcal    = (dbFood.calories * dbFood.avgWeightG / 100).toInt(),
+                                    carbs   = (dbFood.carb * dbFood.avgWeightG / 100).toInt(),
+                                    protein = (dbFood.protein * dbFood.avgWeightG / 100).toInt(),
+                                    fat     = (dbFood.fat * dbFood.avgWeightG / 100).toInt()
+                                )
+                            } else {
+                                val nutritionList = GeminiNutritionService.getNutritionList(listOf(koreanName))
+                                val nutrition = nutritionList.getOrNull(0)
+                                RecognizedFood(
+                                    id      = newId,
+                                    name    = nutrition?.foodName ?: koreanName,
+                                    amount  = "1인분",
+                                    kcal    = nutrition?.kcal ?: 0,
+                                    carbs   = nutrition?.carbs ?: 0,
+                                    protein = nutrition?.protein ?: 0,
+                                    fat     = nutrition?.fat ?: 0
+                                )
+                            }
+                        }
+                        withContext(Dispatchers.Main) {
+                            foodList.addAll(newFoods)
+                            newFoods.forEach { editAmounts[it.id] = it.amount }
+                        }
+                    } catch (e: Exception) {
+                        android.util.Log.e("Camera", "에러: ${e.message}")
+                    }
+                }
+            }
+        }
+    }
+
+    // ── 검색 런처 ──
+    val searchLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == android.app.Activity.RESULT_OK) {
+            val json = result.data?.getStringExtra("food_list_json") ?: return@rememberLauncherForActivityResult
+            try {
+                val jsonArray = org.json.JSONArray(json)
+                val foods = mutableListOf<RecognizedFood>()
+                for (i in 0 until jsonArray.length()) {
+                    val obj = jsonArray.getJSONObject(i)
+                    val foodName = obj.getString("food")
+                    val amount = "${obj.optInt("amount", 1)}${obj.optString("unit", "인분")}"
+                    foods.add(RecognizedFood(
+                        id = (foodList.maxOfOrNull { it.id } ?: 0) + i + 1,
+                        name = foodName,
+                        amount = amount
+                    ))
+                }
+
+                CoroutineScope(Dispatchers.IO).launch {
+                    val repo = FoodRepository(context)
+                    val updatedFoods = foods.map { food ->
+                        val dbFood = repo.searchFood(food.name).firstOrNull()
+                        if (dbFood != null) {
+                            food.copy(
+                                name    = dbFood.name,
+                                amount  = "${dbFood.avgWeightG.toInt()}g",
+                                kcal    = (dbFood.calories * dbFood.avgWeightG / 100).toInt(),
+                                carbs   = (dbFood.carb * dbFood.avgWeightG / 100).toInt(),
+                                protein = (dbFood.protein * dbFood.avgWeightG / 100).toInt(),
+                                fat     = (dbFood.fat * dbFood.avgWeightG / 100).toInt()
+                            )
+                        } else {
+                            val nutritionList = GeminiNutritionService.getNutritionList(listOf(food.name))
+                            val nutrition = nutritionList.getOrNull(0)
+                            food.copy(
+                                name    = nutrition?.foodName ?: food.name,
+                                kcal    = nutrition?.kcal ?: 0,
+                                carbs   = nutrition?.carbs ?: 0,
+                                protein = nutrition?.protein ?: 0,
+                                fat     = nutrition?.fat ?: 0
+                            )
+                        }
+                    }
+                    withContext(Dispatchers.Main) {
+                        foodList.addAll(updatedFoods)
+                        updatedFoods.forEach { editAmounts[it.id] = it.amount }
+                    }
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("Search", "파싱 실패: ${e.message}")
+            }
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -771,7 +868,64 @@ fun FoodConfirmScreen(
                 lineHeight = 20.sp, textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth()
             )
-            Spacer(modifier = Modifier.height(20.dp))
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // ── 추가 버튼 3개 ──
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(44.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(PlusBlue)
+                        .clickable { galleryLauncher.launch("image/*") }
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Icon(Icons.Default.Photo, contentDescription = null, tint = PlusBlueIcon, modifier = Modifier.size(16.dp))
+                        Text("갤러리", fontSize = 13.sp, color = PlusBlueIcon, fontWeight = FontWeight.Medium)
+                    }
+                }
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(44.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Color(0xFFE8F5E9))
+                        .clickable {
+                            val intent = Intent(context, com.example.foodanalyzer.camera.CameraActivity::class.java)
+                            cameraLauncher.launch(intent)
+                        }
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Icon(Icons.Default.CameraAlt, contentDescription = null, tint = Color(0xFF4CAF50), modifier = Modifier.size(16.dp))
+                        Text("카메라", fontSize = 13.sp, color = Color(0xFF4CAF50), fontWeight = FontWeight.Medium)
+                    }
+                }
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(44.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Color(0xFFFFF3E0))
+                        .clickable {
+                            val intent = Intent(context, search.SearchActivity::class.java)
+                            searchLauncher.launch(intent)
+                        }
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Icon(Icons.Default.Edit, contentDescription = null, tint = Color(0xFFFF9800), modifier = Modifier.size(16.dp))
+                        Text("텍스트", fontSize = 13.sp, color = Color(0xFFFF9800), fontWeight = FontWeight.Medium)
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
 
             // ── 음식 직접 추가 입력창 ──
             Row(
@@ -791,32 +945,40 @@ fun FoodConfirmScreen(
                     onClick = {
                         if (inputFoodName.isNotBlank()) {
                             val newId = if (foodList.isEmpty()) 0 else foodList.maxOf { it.id } + 1
-                            foodList.add(
-                                RecognizedFood(
-                                    id = newId,
-                                    name = inputFoodName,
-                                    amount = "1인분"
-                                )
-                            )
+                            foodList.add(RecognizedFood(id = newId, name = inputFoodName, amount = "1인분"))
                             editAmounts[newId] = "1인분"
 
                             val foodNameToSearch = inputFoodName
                             inputFoodName = ""
 
                             CoroutineScope(Dispatchers.IO).launch {
-                                val nutritionList = GeminiNutritionService.getNutritionList(listOf(foodNameToSearch))
-                                val nutrition = nutritionList.getOrNull(0)
-                                if (nutrition != null) {
-                                    withContext(Dispatchers.Main) {
-                                        val index = foodList.indexOfFirst { it.id == newId }
-                                        if (index != -1) {
+                                val repo = FoodRepository(context)
+                                val dbFood = repo.searchFood(foodNameToSearch).firstOrNull()
+                                withContext(Dispatchers.Main) {
+                                    val index = foodList.indexOfFirst { it.id == newId }
+                                    if (index != -1) {
+                                        if (dbFood != null) {
                                             foodList[index] = foodList[index].copy(
-                                                name    = nutrition.foodName,
-                                                kcal    = nutrition.kcal,
-                                                carbs   = nutrition.carbs,
-                                                protein = nutrition.protein,
-                                                fat     = nutrition.fat
+                                                name    = dbFood.name,
+                                                amount  = "${dbFood.avgWeightG.toInt()}g",
+                                                kcal    = (dbFood.calories * dbFood.avgWeightG / 100).toInt(),
+                                                carbs   = (dbFood.carb * dbFood.avgWeightG / 100).toInt(),
+                                                protein = (dbFood.protein * dbFood.avgWeightG / 100).toInt(),
+                                                fat     = (dbFood.fat * dbFood.avgWeightG / 100).toInt()
                                             )
+                                            editAmounts[newId] = "${dbFood.avgWeightG.toInt()}g"
+                                        } else {
+                                            val nutritionList = GeminiNutritionService.getNutritionList(listOf(foodNameToSearch))
+                                            val nutrition = nutritionList.getOrNull(0)
+                                            if (nutrition != null) {
+                                                foodList[index] = foodList[index].copy(
+                                                    name    = nutrition.foodName,
+                                                    kcal    = nutrition.kcal,
+                                                    carbs   = nutrition.carbs,
+                                                    protein = nutrition.protein,
+                                                    fat     = nutrition.fat
+                                                )
+                                            }
                                         }
                                     }
                                 }
@@ -842,18 +1004,24 @@ fun FoodConfirmScreen(
                 }
             } else {
                 foodList.toList().forEach { food ->
+                    val currentFoodState = remember(food.id, food.kcal, food.carbs, food.protein, food.fat, food.amount) { food }
                     FoodItemCard(
-                        food = food,
-                        currentAmount = editAmounts[food.id] ?: food.amount,
+                        food           = currentFoodState,
+                        currentAmount  = editAmounts[food.id] ?: food.amount,
                         onAmountChange = { editAmounts[food.id] = it },
-                        onDelete = {
+                        onDelete       = {
                             foodList.remove(food)
                             editAmounts.remove(food.id)
                         },
-                        onNameChange = { newName ->
-                            val index = foodList.indexOf(food)
-                            if (index != -1) {
-                                foodList[index] = food.copy(name = newName)
+                        onNameChange   = { newName ->
+                            val idx = foodList.indexOfFirst { it.id == food.id }
+                            if (idx != -1) foodList[idx] = food.copy(name = newName)
+                        },
+                        onNutritionRecalculate = { updatedFood ->
+                            val idx = foodList.indexOfFirst { it.id == food.id }
+                            if (idx != -1) {
+                                foodList.removeAt(idx)
+                                foodList.add(idx, updatedFood)
                             }
                         }
                     )
@@ -880,22 +1048,63 @@ fun FoodConfirmScreen(
     }
 }
 
-// ───────────────────────────────────────────────
-// 음식 항목 카드
-// ───────────────────────────────────────────────
 @Composable
 fun FoodItemCard(
     food: RecognizedFood,
     currentAmount: String,
     onAmountChange: (String) -> Unit,
     onDelete: () -> Unit,
-    onNameChange: (String) -> Unit
+    onNameChange: (String) -> Unit,
+    onNutritionRecalculate: (RecognizedFood) -> Unit
 ) {
     var isEditingAmount by remember { mutableStateOf(false) }
-    var isEditingName by remember { mutableStateOf(false) }
-    var tempAmount by remember(currentAmount) { mutableStateOf(currentAmount) }
-    var tempName by remember(food.name) { mutableStateOf(food.name) }
-    val focusManager = LocalFocusManager.current
+    var isEditingName   by remember { mutableStateOf(false) }
+    var tempAmount      by remember(currentAmount) { mutableStateOf(currentAmount) }
+    var tempName        by remember(food.name) { mutableStateOf(food.name) }
+    val focusManager    = LocalFocusManager.current
+    // 영양소 표시 - 실시간 계산
+    val displayGrams = currentAmount.replace("g", "").toDoubleOrNull()
+    val displayKcal = if (food.kcalPer100g > 0 && displayGrams != null)
+        (food.kcalPer100g * displayGrams / 100).toInt() else food.kcal
+    val displayCarbs = if (food.carbsPer100g > 0 && displayGrams != null)
+        (food.carbsPer100g * displayGrams / 100).toInt() else food.carbs
+    val displayProtein = if (food.proteinPer100g > 0 && displayGrams != null)
+        (food.proteinPer100g * displayGrams / 100).toInt() else food.protein
+    val displayFat = if (food.fatPer100g > 0 && displayGrams != null)
+        (food.fatPer100g * displayGrams / 100).toInt() else food.fat
+
+    if (displayKcal > 0) {
+        Spacer(modifier = Modifier.height(8.dp))
+        HorizontalDivider(color = Color(0xFFF0F0F0), thickness = 1.dp)
+        Spacer(modifier = Modifier.height(8.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text("${displayKcal}kcal", fontSize = 13.sp, color = Color(0xFF4CAF50), fontWeight = FontWeight.Medium)
+            Text("탄 ${displayCarbs}g", fontSize = 13.sp, color = Color(0xFF888888))
+            Text("단 ${displayProtein}g", fontSize = 13.sp, color = Color(0xFF888888))
+            Text("지 ${displayFat}g", fontSize = 13.sp, color = Color(0xFF888888))
+        }
+    }
+
+    fun confirmAmount() {
+        onAmountChange(tempAmount)
+        isEditingAmount = false
+        focusManager.clearFocus()
+        // 재계산
+        if (food.kcalPer100g > 0) {
+            val grams = tempAmount.replace("g", "").toDoubleOrNull()
+            if (grams != null) {
+                onNutritionRecalculate(
+                    food.copy(
+                        amount  = tempAmount,
+                        kcal    = (food.kcalPer100g * grams / 100).toInt(),
+                        carbs   = (food.carbsPer100g * grams / 100).toInt(),
+                        protein = (food.proteinPer100g * grams / 100).toInt(),
+                        fat     = (food.fatPer100g * grams / 100).toInt()
+                    )
+                )
+            }
+        }
+    }
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -904,8 +1113,6 @@ fun FoodItemCard(
         elevation = CardDefaults.cardElevation(1.dp)
     ) {
         Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 16.dp)) {
-
-            // ── 음식 이름 행 ──
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -963,7 +1170,6 @@ fun FoodItemCard(
 
             HorizontalDivider(color = Color(0xFFF0F0F0), thickness = 1.dp, modifier = Modifier.padding(vertical = 10.dp))
 
-            // ── 양 수정 행 ──
             Column(modifier = Modifier.fillMaxWidth()) {
                 Text("양", fontSize = 12.sp, color = Color(0xFFAAAAAA))
                 Spacer(modifier = Modifier.height(4.dp))
@@ -973,11 +1179,7 @@ fun FoodItemCard(
                         onValueChange = { tempAmount = it },
                         textStyle = TextStyle(fontSize = 15.sp, color = Color(0xFF1A1A1A)),
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                        keyboardActions = KeyboardActions(onDone = {
-                            onAmountChange(tempAmount)
-                            isEditingAmount = false
-                            focusManager.clearFocus()
-                        }),
+                        keyboardActions = KeyboardActions(onDone = { confirmAmount() }),
                         modifier = Modifier
                             .fillMaxWidth()
                             .border(1.5.dp, Color(0xFF5B9BD5), RoundedCornerShape(8.dp))
@@ -987,11 +1189,7 @@ fun FoodItemCard(
                     Text(
                         "✓ 확인", fontSize = 13.sp, color = Color(0xFF4CAF50),
                         fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier.clickable {
-                            onAmountChange(tempAmount)
-                            isEditingAmount = false
-                            focusManager.clearFocus()
-                        }
+                        modifier = Modifier.clickable { confirmAmount() }
                     )
                 } else {
                     Text(
@@ -1003,13 +1201,23 @@ fun FoodItemCard(
                     )
                 }
             }
+
+            // 영양소 표시
+            if (food.kcal > 0) {
+                Spacer(modifier = Modifier.height(8.dp))
+                HorizontalDivider(color = Color(0xFFF0F0F0), thickness = 1.dp)
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("${food.kcal}kcal", fontSize = 13.sp, color = Color(0xFF4CAF50), fontWeight = FontWeight.Medium)
+                    Text("탄 ${food.carbs}g", fontSize = 13.sp, color = Color(0xFF888888))
+                    Text("단 ${food.protein}g", fontSize = 13.sp, color = Color(0xFF888888))
+                    Text("지 ${food.fat}g", fontSize = 13.sp, color = Color(0xFF888888))
+                }
+            }
         }
     }
 }
 
-// ───────────────────────────────────────────────
-// 영양소 결과 화면
-// ───────────────────────────────────────────────
 @Composable
 fun NutritionResultScreen(
     foods: List<RecognizedFood>,
@@ -1022,7 +1230,6 @@ fun NutritionResultScreen(
     val totalFat     = foods.sumOf { it.fat }
 
     Column(modifier = Modifier.fillMaxSize().background(Color(0xFFF7F7F7))) {
-        // 앱바
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -1032,7 +1239,7 @@ fun NutritionResultScreen(
             IconButton(onClick = onReEdit, modifier = Modifier.align(Alignment.CenterStart)) {
                 Icon(Icons.Default.ArrowBack, contentDescription = "뒤로가기", tint = Color(0xFF1A1A1A))
             }
-            Text("음식 확인/수정", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color(0xFF1A1A1A), modifier = Modifier.align(Alignment.Center))
+            Text("영양소 분석 결과", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color(0xFF1A1A1A), modifier = Modifier.align(Alignment.Center))
         }
 
         Column(
@@ -1050,7 +1257,6 @@ fun NutritionResultScreen(
             )
             Spacer(modifier = Modifier.height(20.dp))
 
-            // 총 영양소 카드
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(20.dp),
@@ -1085,7 +1291,6 @@ fun NutritionResultScreen(
             Spacer(modifier = Modifier.height(100.dp))
         }
 
-        // 하단 버튼
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -1116,9 +1321,6 @@ fun NutritionResultScreen(
     }
 }
 
-// ───────────────────────────────────────────────
-// 총 영양소 요약 아이템
-// ───────────────────────────────────────────────
 @Composable
 fun NutrientSummaryItem(label: String, value: String) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -1128,9 +1330,6 @@ fun NutrientSummaryItem(label: String, value: String) {
     }
 }
 
-// ───────────────────────────────────────────────
-// 음식별 결과 카드
-// ───────────────────────────────────────────────
 @Composable
 fun FoodResultCard(food: RecognizedFood) {
     Card(
@@ -1154,9 +1353,6 @@ fun FoodResultCard(food: RecognizedFood) {
     }
 }
 
-// ───────────────────────────────────────────────
-// 영양소 태그
-// ───────────────────────────────────────────────
 @Composable
 fun NutrientTag(text: String) {
     Box(
