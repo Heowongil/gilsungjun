@@ -48,7 +48,12 @@ class SearchActivity : AppCompatActivity() {
         }
 
         btnMic.setOnClickListener {
-            speechRecognizer.startListening(intent)
+            val recognizerIntent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, packageName)
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE, "ko-KR")
+                putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
+            }
+            speechRecognizer.startListening(recognizerIntent)
             Toast.makeText(this, "말씀하세요!", Toast.LENGTH_SHORT).show()
         }
 
@@ -72,9 +77,15 @@ class SearchActivity : AppCompatActivity() {
                 val message = when (error) {
                     SpeechRecognizer.ERROR_AUDIO -> "오디오 에러"
                     SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "권한 없음"
+                    SpeechRecognizer.ERROR_NO_MATCH -> "인식 실패, 다시 말씀해주세요"
+                    SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> {
+                        speechRecognizer.cancel()
+                        "다시 시도해주세요"
+                    }
+                    SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "말소리가 감지되지 않았어요"
                     else -> "다시 시도해주세요 ($error)"
                 }
-                tvResult.text = "에러 발생: $message"
+                tvResult.text = message
             }
 
             override fun onResults(results: Bundle?) {
